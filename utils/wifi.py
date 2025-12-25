@@ -34,6 +34,10 @@ WIFI_AP_PASSWORD = None
 WIFI_WAIT_AFTER_SUBMIT_S = None
 ap_server_socket = None
 
+# Cache scan results to avoid repeated scans per refresh.
+_ap_last_scan_ssids = None
+_ap_last_scan_ms = 0
+
 
 WIFI_HTML_FORM_TEMPLATE = """\
 HTTP/1.1 200 OK
@@ -57,8 +61,13 @@ Connection: close
   <p>Enter Wi-Fi credentials and submit:</p>
   <form method=\"POST\">
     <label>WiFi SSID:
-      <input type=\"text\" name=\"ssid\">
+            <input type=\"text\" name=\"ssid\" value=\"__SSID_VALUE__\">
     </label>
+        <label>Or pick from scan results:
+            <select name=\"ssid_select\">
+                __SSID_OPTIONS__
+            </select>
+        </label>
     <label>WiFi Password:
       <input type=\"password\" name=\"password\">
     </label>
@@ -68,6 +77,7 @@ Connection: close
         <label>Crosswind Threshold (kts 0-100):
             <input type=\"number\" name=\"crosswind_threshold\" min=\"0\" max=\"100\" step=\"1\" value=\"__CROSSWIND_THRESHOLD__\">
         </label>
+        <input type=\"submit\" name=\"action\" value=\"Scan\">
         <input type=\"submit\" name=\"action\" value=\"Save\">
         <input type=\"submit\" name=\"action\" value=\"Update\">
   </form>
@@ -236,15 +246,114 @@ def _save_board_config(led_brightness, crosswind_threshold):
 
 
 def _render_wifi_form():
+    return _render_wifi_form_with_ssids(None)
+
+
+def _html_escape(s):
+    if s is None:
+        return ""
+    try:
+        s = str(s)
+    except Exception:
+        return ""
+    return (
+        s.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#39;")
+    )
+
+
+def _scan_ssids():
+    """Scan SSIDs using STA interface (best-effort while AP is active)."""
+    sta = None
+    try:
+        sta = network.WLAN(network.STA_IF)
+        try:
+            sta.active(True)
+        except Exception:
+            pass
+        _sleep_ms(200)
+
+        nets = sta.scan()
+
+        seen = {}
+        for n in nets:
+            try:
+                ssid = _decode_ssid(n[0])
+                rssi = n[3]
+                if not ssid:
+                    continue
+                # Keep strongest RSSI if duplicates.
+                if ssid not in seen or rssi > seen[ssid]:
+                    seen[ssid] = rssi
+            except Exception:
+                pass
+
+        ssids = list(seen.keys())
+        ssids.sort(key=lambda s: seen.get(s, -999), reverse=True)
+        # Keep page small.
+        return ssids[:20]
+
+    except Exception as e:
+        print("SSID scan failed:", e)
+        return []
+    finally:
+        try:
+            if sta is not None:
+                sta.active(False)
+        except Exception:
+            pass
+
+
+def _get_cached_scan_ssids(max_age_ms=30000):
+    global _ap_last_scan_ssids, _ap_last_scan_ms
+    try:
+        now = utime.ticks_ms()
+        age = utime.ticks_diff(now, _ap_last_scan_ms)
+        if _ap_last_scan_ssids is not None and age >= 0 and age <= max_age_ms:
+            return _ap_last_scan_ssids
+    except Exception:
+        pass
+    return None
+
+
+def _update_cached_scan_ssids(ssids):
+    global _ap_last_scan_ssids, _ap_last_scan_ms
+    _ap_last_scan_ssids = ssids
+    try:
+        _ap_last_scan_ms = utime.ticks_ms()
+    except Exception:
+        _ap_last_scan_ms = 0
+
+
+def _render_wifi_form_with_ssids(ssids):
     led = supportjson.readFromJSON("LED_BRIGHTNESS")
     cross = supportjson.readFromJSON("CROSSWIND_THRESHOLD_KTS")
+    current_ssid = supportjson.readFromJSON("WIFI_SSID")
 
     led_s = "" if led is None else str(led)
     cross_s = "" if cross is None else str(cross)
+    ssid_value = "" if current_ssid is None else str(current_ssid)
+
+    # If caller didn't provide scan results, use cached (if any).
+    if ssids is None:
+        ssids = _get_cached_scan_ssids() or []
+
+    options = ["<option value=\"\">-- select --</option>"]
+    for s in ssids:
+        esc = _html_escape(s)
+        sel = ""
+        if current_ssid is not None and str(s) == str(current_ssid):
+            sel = " selected"
+        options.append("<option value=\"{}\"{}>{}</option>".format(esc, sel, esc))
 
     html = WIFI_HTML_FORM_TEMPLATE
     html = html.replace("__LED_BRIGHTNESS__", led_s)
     html = html.replace("__CROSSWIND_THRESHOLD__", cross_s)
+    html = html.replace("__SSID_VALUE__", _html_escape(ssid_value))
+    html = html.replace("__SSID_OPTIONS__", "\n".join(options))
     return html
 
 
@@ -393,10 +502,25 @@ def startupAccessPointConfigPortal():
                 if method == "POST":
                     params = _ap_parse_post_body(body)
                     ssid = params.get("ssid", "")
+                    ssid_select = params.get("ssid_select", "")
                     password = params.get("password", "")
                     led_brightness = params.get("led_brightness", "")
                     crosswind_threshold = params.get("crosswind_threshold", "")
                     action = params.get("action", "Save")
+
+                    # If manual SSID is blank, use selected SSID.
+                    if (ssid is None or str(ssid).strip() == "") and ssid_select:
+                        ssid = ssid_select
+
+                    if action == "Scan":
+                        ssids = _scan_ssids()
+                        _update_cached_scan_ssids(ssids)
+                        _ap_send(cl, _render_wifi_form_with_ssids(ssids))
+                        try:
+                            cl.close()
+                        except Exception:
+                            pass
+                        continue
 
                     print("\n=== WiFi settings received ===")
                     print("SSID:     '{}'".format(ssid))
