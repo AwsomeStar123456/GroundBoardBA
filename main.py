@@ -19,6 +19,80 @@ LED_BRIGHTNESS = None
 CROSSWIND_THRESHOLD_KTS = None
 
 
+def _short(s, max_len=16):
+    if s is None:
+        return ""
+    try:
+        s = str(s)
+    except Exception:
+        return ""
+    if len(s) <= max_len:
+        return s
+    return s[: max_len - 1] + "…"
+
+
+def _display_update_failure(info):
+    # Best-effort mapping to short OLED-friendly messages.
+    reason = None
+    wifi = None
+    try:
+        if isinstance(info, dict):
+            reason = info.get("reason")
+            wifi = info.get("wifi")
+    except Exception:
+        pass
+
+    title = "Update Failed"
+    line = None
+
+    wifi_reason = None
+    wifi_status = None
+    try:
+        if isinstance(wifi, dict):
+            wifi_reason = wifi.get("reason")
+            wifi_status = wifi.get("status")
+    except Exception:
+        pass
+
+    # Prefer WiFi reason when present.
+    if wifi_reason == "password_incorrect":
+        line = "Bad Password"
+    elif wifi_reason == "no_ssid_found":
+        line = "AP Not Found"
+    elif wifi_reason == "no_ssid_configured":
+        line = "No SSID"
+    elif wifi_reason == "connect_failed":
+        line = "Connect Failed"
+    elif reason == "missing_config":
+        missing = info.get("missing") if isinstance(info, dict) else None
+        line = "Missing {}".format(missing or "config")
+    elif reason == "bad_config":
+        line = "Bad Config"
+    elif reason == "no_internet":
+        line = "No Internet"
+    elif reason == "wifi_error":
+        line = "WiFi Error"
+    elif reason == "no_file_list":
+        line = "No File List"
+    elif reason == "download_failed":
+        line = "DL Failed"
+    else:
+        line = _short(reason or "failed")
+
+    try:
+        DisplayI2C.displayClear()
+        DisplayI2C.display_row3 = title
+        DisplayI2C.display_row6 = _short(line, 16)
+        # If we have a status code, show it too.
+        if wifi_status is not None:
+            DisplayI2C.display_row7 = _short("ERR Code: {}".format(wifi_status), 16)
+        else:
+            DisplayI2C.display_row7 = ""
+        DisplayI2C.displayRefresh()
+    except Exception:
+        pass
+
+
 def leds_set_colors(wind_dir, wind_speed):
     global RUNWAY_HEADINGS, LED_BRIGHTNESS, CROSSWIND_THRESHOLD_KTS
 
@@ -118,25 +192,42 @@ DisplayI2C.displayRefresh()
 if supportjson.readFromJSON("UPDATE_MODE"):
     DisplayI2C.displayClear()
     print("Update Mode Enabled - Starting updater")
-    DisplayI2C.display_row3 = "Update Mode"
-    DisplayI2C.display_row4 = "Updating"
+    DisplayI2C.display_row0 = "Update Mode"
+    DisplayI2C.display_row1 = "Starting Update"
+
+    DisplayI2C.display_row3 = "Please Do Not"
+    DisplayI2C.display_row4 = "Turn Off Power"
     DisplayI2C.displayRefresh()
+    sleep(5)
+    DisplayI2C.displayClear()
 
     ok, info = updates.run_update(connect_wifi=True)
+
+    DisplayI2C.displayClear()
+
     if ok:
         supportjson.writeToJSON("UPDATE_MODE", False)
-        DisplayI2C.display_row6 = "Update"
-        DisplayI2C.display_row7 = "Success"
+        DisplayI2C.displayClear()
+        DisplayI2C.display_row0 = "Update Mode"
+        DisplayI2C.display_row1 = "Success"
+        DisplayI2C.display_row3 = "Unit"
+        DisplayI2C.display_row4 = "Restarting"
         DisplayI2C.displayRefresh()
-        sleep(1)
+        sleep(5)
         machine.reset()
     else:
+        supportjson.writeToJSON("UPDATE_MODE", False)
+        DisplayI2C.displayClear()
         print("Update failed:", info)
-        DisplayI2C.display_row6 = "Update"
-        DisplayI2C.display_row7 = "Failed"
+        _display_update_failure(info)
+        DisplayI2C.display_row0 = "Update Mode"
+        DisplayI2C.display_row1 = "Failed"
+        DisplayI2C.display_row3 = "Turn Unit"
+        DisplayI2C.display_row4 = "Off/On"
+        DisplayI2C.display_row5 = "Wifi Error:"
         DisplayI2C.displayRefresh()
         while True:
-            sleep(1)
+            sleep(5)
 
 
 ButtonPy.startupButtons()

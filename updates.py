@@ -24,6 +24,9 @@ import utils.jsonsupport as supportjson
 RAW_HOST = "raw.githubusercontent.com"
 API_HOST = "api.github.com"
 
+# Default repo for updates (used if config.json doesn't provide GITHUB_REPO)
+DEFAULT_GITHUB_REPO = "AwsomeStar123456/GroundBoardBA"
+
 
 def _sleep_ms(ms):
 	try:
@@ -241,6 +244,16 @@ def _join_repo_path(subdir, relpath):
 def _repo_owner_and_name(repo):
 	if not repo:
 		return None, None
+	# Allow passing a full GitHub URL.
+	try:
+		repo = str(repo).strip()
+		if repo.startswith("https://github.com/"):
+			repo = repo[len("https://github.com/") :]
+		if repo.endswith(".git"):
+			repo = repo[: -len(".git")]
+		repo = repo.strip("/")
+	except Exception:
+		pass
 	if "/" not in repo:
 		return None, None
 	owner, name = repo.split("/", 1)
@@ -330,7 +343,7 @@ def run_update(connect_wifi=True):
 
 	Returns (ok: bool, info: dict)
 	"""
-	repo = supportjson.readFromJSON("GITHUB_REPO")
+	repo = supportjson.readFromJSON("GITHUB_REPO") or DEFAULT_GITHUB_REPO
 	branch = supportjson.readFromJSON("GITHUB_BRANCH") or "main"
 	subdir = supportjson.readFromJSON("GITHUB_SUBDIR") or ""
 	manifest_path = supportjson.readFromJSON("UPDATE_MANIFEST_PATH") or "update_manifest.json"

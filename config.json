@@ -7,11 +7,14 @@
   "BUTTON_PIN_SYNC": 15,
   "BUTTON_PIN_AP": 10,
   "WIFI_SSID": "MuhaLeti",
-  "WIFI_PASSWORD": "w466ea3d348a6kw",
+  "WIFI_PASSWORD": "w466ea3d348a6k",
   "WIFI_AP_SSID": "MetarBoard",
   "WIFI_AP_PASSWORD": "metar123",
   "WIFI_WAIT_AFTER_SUBMIT_S": 5,
   "MAX_WIFI_WAIT": 30,
   "METAR_STATION_ID":"KSLC",
-  "UPDATE_MODE":false
+  "UPDATE_MODE":false,
+  "GITHUB_REPO": "AwsomeStar123456/GroundBoardBA",
+  "GITHUB_BRANCH": "main",
+  "GITHUB_SUBDIR": ""
 }
