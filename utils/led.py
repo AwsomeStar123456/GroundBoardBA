@@ -54,23 +54,23 @@ def startupSequenceLED():
 
         # sleep(5)
 
-        # #Test Red
-        # ledObject.fill((0,255,0))
-        # ledObject.write()
-        # sleep(1)
+        #Test Red
+        ledObject.fill((0,255,0))
+        ledObject.write()
+        sleep(1)
 
-        # #Test Green
-        # ledObject.fill((255,0,0))
-        # ledObject.write()
-        # sleep(1)
+        #Test Green
+        ledObject.fill((255,0,0))
+        ledObject.write()
+        sleep(1)
 
-        # #Test Blue
-        # ledObject.fill((0,0,255))
-        # ledObject.write()
-        # sleep(1)
+        #Test Blue
+        ledObject.fill((0,0,255))
+        ledObject.write()
+        sleep(1)
 
-        # #Turn Off
-        # ledObject.fill((0,0,0))
-        # ledObject.write()
-        # sleep(1)
+        #Turn Off
+        ledObject.fill((0,0,0))
+        ledObject.write()
+        sleep(1)
         
