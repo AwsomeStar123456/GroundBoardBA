@@ -224,7 +224,7 @@ if supportjson.readFromJSON("UPDATE_MODE"):
         DisplayI2C.display_row1 = "Failed"
         DisplayI2C.display_row3 = "Turn Unit"
         DisplayI2C.display_row4 = "Off/On"
-        DisplayI2C.display_row5 = "Wifi Error:"
+        DisplayI2C.display_row5 = "Error:"
         DisplayI2C.displayRefresh()
         while True:
             sleep(5)

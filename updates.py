@@ -27,6 +27,21 @@ API_HOST = "api.github.com"
 # Default repo for updates (used if config.json doesn't provide GITHUB_REPO)
 DEFAULT_GITHUB_REPO = "AwsomeStar123456/GroundBoardBA"
 
+# Fallback list (used only if manifest is missing AND GitHub API listing fails).
+# Keep this in sync with your repo layout.
+DEFAULT_FALLBACK_FILES = [
+	"main.py",
+	"updates.py",
+	"lib/__init__.py",
+	"lib/ssd1306.py",
+	"utils/__init__.py",
+	"utils/buttons.py",
+	"utils/i2cdisplay.py",
+	"utils/jsonsupport.py",
+	"utils/led.py",
+	"utils/wifi.py",
+]
+
 
 def _sleep_ms(ms):
 	try:
@@ -155,6 +170,21 @@ def _http_get_to_bytes(host, path, timeout_s=12, extra_headers=None, max_bytes=2
 				ss.close()
 		except Exception:
 			pass
+
+
+def _body_prefix(body, max_len=160):
+	if not body:
+		return ""
+	try:
+		if isinstance(body, (bytes, bytearray)):
+			b = body[:max_len]
+			try:
+				return b.decode("utf-8")
+			except Exception:
+				return b.decode("latin-1")
+		return str(body)[:max_len]
+	except Exception:
+		return ""
 		try:
 			if s:
 				s.close()
@@ -289,7 +319,7 @@ def _get_tree_file_list(repo_owner, repo_name, branch, subdir, allowed_exts):
 	headers = {"Accept": "application/vnd.github+json"}
 	code, body = _http_get_to_bytes(API_HOST, path, timeout_s=20, extra_headers=headers, max_bytes=200000)
 	if code != 200 or not body:
-		return None
+		return None, {"http": code, "body": _body_prefix(body)}
 	try:
 		obj = json.loads(body.decode("utf-8"))
 	except Exception:
@@ -297,7 +327,7 @@ def _get_tree_file_list(repo_owner, repo_name, branch, subdir, allowed_exts):
 
 	tree = obj.get("tree") if isinstance(obj, dict) else None
 	if not tree:
-		return None
+		return None, {"http": code, "body": _body_prefix(body), "error": "missing_tree"}
 
 	subdir = _normalize_subdir(subdir)
 	out = []
@@ -327,7 +357,7 @@ def _get_tree_file_list(repo_owner, repo_name, branch, subdir, allowed_exts):
 		except Exception:
 			pass
 
-	return out
+	return out, None
 
 
 def run_update(connect_wifi=True):
@@ -385,10 +415,19 @@ def run_update(connect_wifi=True):
 		print("Manifest fetch failed:", e)
 
 	if not files:
-		files = _get_tree_file_list(owner, name, branch, subdir, allowed_exts)
+		files, tree_err = _get_tree_file_list(owner, name, branch, subdir, allowed_exts)
 		if not files:
-			return False, {"reason": "no_file_list"}
-		print("Using GitHub tree file list. count=", len(files))
+			# Raw-only fallback (no api.github.com) using a built-in list.
+			fallback = supportjson.readFromJSON("UPDATE_FALLBACK_FILES")
+			if not isinstance(fallback, list) or not fallback:
+				fallback = DEFAULT_FALLBACK_FILES
+			print("GitHub API file listing failed; using fallback list. err=", tree_err)
+			files = fallback
+			# If even fallback is empty, return a helpful reason.
+			if not files:
+				return False, {"reason": "no_file_list", "api": tree_err}
+		else:
+			print("Using GitHub tree file list. count=", len(files))
 
 	# Filter out preserved files.
 	preserve_set = set([str(p).lstrip("/") for p in preserve])

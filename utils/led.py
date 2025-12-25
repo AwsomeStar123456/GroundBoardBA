@@ -52,7 +52,7 @@ def startupSequenceLED():
         #ledObject.fill((0,10,10))
         #ledObject.write()
 
-        # sleep(5)
+        sleep(5)
 
         #Test Red
         ledObject.fill((0,255,0))

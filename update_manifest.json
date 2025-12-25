@@ -1,0 +1,13 @@
+[
+  "main.py",
+  "updates.py",
+  "config.json",
+  "lib/__init__.py",
+  "lib/ssd1306.py",
+  "utils/__init__.py",
+  "utils/buttons.py",
+  "utils/i2cdisplay.py",
+  "utils/jsonsupport.py",
+  "utils/led.py",
+  "utils/wifi.py"
+]
