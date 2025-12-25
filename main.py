@@ -15,10 +15,17 @@ metar_data = None
 # One heading per LED index. If left as None, we default to evenly-spaced headings
 # based on LED.LED_COUNT after LEDs are initialized.
 RUNWAY_HEADINGS = None
+LED_BRIGHTNESS = None
+CROSSWIND_THRESHOLD_KTS = None
 
 
 def leds_set_colors(wind_dir, wind_speed):
-    global RUNWAY_HEADINGS
+    global RUNWAY_HEADINGS, LED_BRIGHTNESS, CROSSWIND_THRESHOLD_KTS
+
+    if LED_BRIGHTNESS is None:
+        LED_BRIGHTNESS = 100
+    if CROSSWIND_THRESHOLD_KTS is None:
+        CROSSWIND_THRESHOLD_KTS = 10
 
     if RUNWAY_HEADINGS is None:
         RUNWAY_HEADINGS = supportjson.readFromJSON("RUNWAY_HEADINGS")
@@ -51,22 +58,21 @@ def leds_set_colors(wind_dir, wind_speed):
         # - Red: tailwind component > 0
         # - Color = (Green, Red, Blue)
         if wind_speed <= 3:
-            color = (50, 0, 0)
+            color = (255*LED_BRIGHTNESS // 100, 0, 0)
         else:
-            color = (0, 0, 50)
+            color = (0, 0, 255*LED_BRIGHTNESS // 100)
 
             # Headwind
             if headwind_comp > 0:
-                color = (50, 0, 0)
+                color = (255*LED_BRIGHTNESS // 100, 0, 0)
 
                 # Significant crosswind
-                if crosswind_comp > 10:
-                    color = (50, 50, 0)
+                if crosswind_comp > CROSSWIND_THRESHOLD_KTS:
+                    color = (255*LED_BRIGHTNESS // 100, 255*LED_BRIGHTNESS // 100, 0)
 
             # Tailwind
             else:
-                color = (0, 50, 0)
-
+                color = (0, 255*LED_BRIGHTNESS // 100, 0)
         LED.ledObject[i] = color
 
     LED.ledObject.write()
@@ -80,6 +86,15 @@ def format_unix_utc(ts):
 print("Starting Ground Board BA...")
 
 #-----Initialization-----
+LED_BRIGHTNESS = supportjson.readFromJSON("LED_BRIGHTNESS")
+if LED_BRIGHTNESS is None:
+    LED_BRIGHTNESS = 100
+print("LED_BRIGHTNESS set to", LED_BRIGHTNESS)
+
+CROSSWIND_THRESHOLD_KTS = supportjson.readFromJSON("CROSSWIND_THRESHOLD_KTS")
+if CROSSWIND_THRESHOLD_KTS is None:
+    CROSSWIND_THRESHOLD_KTS = 10
+print("CROSSWIND_THRESHOLD_KTS set to", CROSSWIND_THRESHOLD_KTS)
 
 #Display Initialization
 DisplayI2C.startupDisplay()

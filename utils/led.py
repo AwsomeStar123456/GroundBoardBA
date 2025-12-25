@@ -41,8 +41,11 @@ def startupSequenceLED():
         #     ledObject[i] = (0, 0, 0)  # Off
         #     ledObject.write()
         #     sleep(0.3)
-        
-        ledObject.fill((0,0,10))
+        JSONBRIGHTNESS = supportjson.readFromJSON("LED_BRIGHTNESS")
+        if JSONBRIGHTNESS is None:
+            JSONBRIGHTNESS = 100
+
+        ledObject.fill((0,0,int(255 * JSONBRIGHTNESS / 100)))
         ledObject.write()
         sleep(1)
         

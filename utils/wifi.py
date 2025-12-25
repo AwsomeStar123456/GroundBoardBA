@@ -39,7 +39,7 @@ _ap_last_scan_ssids = None
 _ap_last_scan_ms = 0
 
 
-WIFI_HTML_FORM_TEMPLATE = """\
+WIFI_HTML_MAIN_TEMPLATE = """\
 HTTP/1.1 200 OK
 Content-Type: text/html
 Connection: close
@@ -48,39 +48,119 @@ Connection: close
 <html>
 <head>
   <meta charset=\"utf-8\">
-  <title>Ground Board Wi-Fi Setup</title>
+    <title>Ground Board Settings</title>
   <style>
-    body { font-family: sans-serif; max-width: 420px; margin: 20px auto; }
-    label { display: block; margin-top: 12px; }
-    input[type=text], input[type=password], input[type=number] { width: 100%; padding: 8px; }
-    input[type=submit] { margin-top: 16px; padding: 10px 16px; }
+        body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+        .wrap { max-width: 460px; margin: 20px auto; padding: 0 12px; }
+        .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+        h2 { margin: 0 0 8px 0; }
+        p { margin: 8px 0; color: #333; }
+        .hint { font-size: 0.92em; color: #555; }
+        label { display: block; margin-top: 12px; font-weight: 600; }
+        input[type=text], input[type=password], input[type=number], select { width: 100%; padding: 10px; border: 1px solid #cfd6dd; border-radius: 8px; box-sizing: border-box; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btns { display: flex; gap: 10px; margin-top: 14px; }
+        input[type=submit] { flex: 1; padding: 11px 12px; border: 0; border-radius: 8px; background: #1f6feb; color: #fff; font-weight: 700; }
+        input[type=submit][value=Scan] { background: #6e7781; }
+        input[type=submit][value=Update] { background: #2da44e; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   </style>
 </head>
 <body>
-  <h2>Binary Aviation Ground Board</h2>
-  <p>Enter Wi-Fi credentials and submit:</p>
-  <form method=\"POST\">
-    <label>WiFi SSID:
-            <input type=\"text\" name=\"ssid\" value=\"__SSID_VALUE__\">
-    </label>
-        <label>Or pick from scan results:
-            <select name=\"ssid_select\">
-                __SSID_OPTIONS__
-            </select>
-        </label>
-    <label>WiFi Password:
-      <input type=\"password\" name=\"password\">
-    </label>
-        <label>LED Brightness (%):
-            <input type=\"number\" name=\"led_brightness\" min=\"0\" max=\"100\" step=\"1\" value=\"__LED_BRIGHTNESS__\">
-        </label>
-        <label>Crosswind Threshold (kts 0-100):
-            <input type=\"number\" name=\"crosswind_threshold\" min=\"0\" max=\"100\" step=\"1\" value=\"__CROSSWIND_THRESHOLD__\">
-        </label>
-        <input type=\"submit\" name=\"action\" value=\"Scan\">
-        <input type=\"submit\" name=\"action\" value=\"Save\">
-        <input type=\"submit\" name=\"action\" value=\"Update\">
-  </form>
+    <div class=\"wrap\">
+        <div class=\"card\">
+            <h2>Binary Aviation Ground Board</h2>
+            <p class=\"hint\">Main Settings</p>
+
+            <form method=\"POST\" action=\"/\">
+                <div class=\"row\">
+                    <div>
+                        <label>LED Brightness (%):
+                            <input type=\"number\" name=\"led_brightness\" min=\"0\" max=\"100\" step=\"1\" value=\"__LED_BRIGHTNESS__\">
+                        </label>
+                    </div>
+                    <div>
+                        <label>Crosswind Threshold (kts):
+                            <input type=\"number\" name=\"crosswind_threshold\" min=\"0\" max=\"100\" step=\"1\" value=\"__CROSSWIND_THRESHOLD__\">
+                        </label>
+                    </div>
+                </div>
+
+                <div class=\"btns\">
+                    <input type=\"submit\" name=\"action\" value=\"Save\">
+                    <input type=\"submit\" name=\"action\" value=\"WiFi Settings\">
+                    <input type=\"submit\" name=\"action\" value=\"Update\">
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+
+WIFI_HTML_WIFI_TEMPLATE = """\
+HTTP/1.1 200 OK
+Content-Type: text/html
+Connection: close
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset=\"utf-8\">
+  <title>WiFi Settings</title>
+  <style>
+        body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+        .wrap { max-width: 460px; margin: 20px auto; padding: 0 12px; }
+        .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+        h2 { margin: 0 0 8px 0; }
+        p { margin: 8px 0; color: #333; }
+        .hint { font-size: 0.92em; color: #555; }
+        label { display: block; margin-top: 12px; font-weight: 600; }
+      input[type=text], input[type=password] { width: 100%; padding: 10px; border: 1px solid #cfd6dd; border-radius: 8px; box-sizing: border-box; }
+        .btns { display: flex; gap: 10px; margin-top: 14px; }
+        input[type=submit], a.btn { flex: 1; padding: 11px 12px; border: 0; border-radius: 8px; background: #1f6feb; color: #fff; font-weight: 700; text-align: center; text-decoration: none; display: inline-block; box-sizing: border-box; }
+        input[type=submit][value=Scan] { background: #6e7781; }
+        a.btn { background: #6e7781; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+      .row2 { display: grid; grid-template-columns: 1fr 110px; gap: 10px; align-items: end; }
+      .row2 input[type=submit] { width: 100%; }
+  </style>
+</head>
+<body>
+    <div class=\"wrap\">
+        <div class=\"card\">
+            <h2>WiFi Settings</h2>
+            <p class=\"hint\">Current SSID: <span class=\"mono\">__CURRENT_SSID__</span></p>
+            <p class=\"hint\">After scanning, pick a network to auto-fill SSID. Typing in the SSID box will override the scan selection.</p>
+
+            <form method=\"POST\" action=\"/wifi\">
+                <div class=\"row2\">
+                    <div>
+                        <label>WiFi SSID:
+                            <input id=\"ssid_input\" type=\"text\" name=\"ssid\" value=\"__SSID_VALUE__\" placeholder=\"Type SSID here\">
+                        </label>
+                    </div>
+                    <div>
+                        <label>&nbsp;
+                            <input type=\"submit\" name=\"action\" value=\"Scan\">
+                        </label>
+                    </div>
+                </div>
+
+                __SCAN_RESULTS_BLOCK__
+
+                <label>WiFi Password:
+                    <input type=\"password\" name=\"password\" placeholder=\"Leave blank for open network\">
+                </label>
+
+                <div class=\"btns\">
+                    <input type=\"submit\" name=\"action\" value=\"Save WiFi\">
+                    <a class=\"btn\" href=\"/\">Back</a>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>
 """
@@ -98,9 +178,9 @@ Connection: close
   <title>Saved</title>
 </head>
 <body>
-  <h2>Saved</h2>
-  <p>Wi-Fi settings were saved to config.json.</p>
-  <p>You can now disconnect from this Wi-Fi network.</p>
+    <h2>Saved</h2>
+    <p>Settings were saved. Closing AP mode...</p>
+    <p>You can now disconnect from this Wi-Fi network.</p>
 </body>
 </html>
 """
@@ -209,12 +289,16 @@ def _ap_send(cl, payload):
 
 
 def _save_wifi_config(ssid, password):
-    # Only overwrite if user actually provided a value.
-    if ssid is not None and ssid != "":
-        supportjson.writeToJSON("WIFI_SSID", ssid)
-    # Allow empty password for open networks.
-    if password is not None:
-        supportjson.writeToJSON("WIFI_PASSWORD", password)
+    # Always overwrite SSID on explicit "Save WiFi".
+    # Blank SSID means "no SSID configured".
+    if ssid is None:
+        ssid = ""
+    supportjson.writeToJSON("WIFI_SSID", ssid)
+    # Always overwrite password on explicit "Save WiFi".
+    # Blank password means open network / no password.
+    if password is None:
+        password = ""
+    supportjson.writeToJSON("WIFI_PASSWORD", password)
 
 
 def _parse_int_in_range(value, min_value=0, max_value=100):
@@ -246,7 +330,20 @@ def _save_board_config(led_brightness, crosswind_threshold):
 
 
 def _render_wifi_form():
-    return _render_wifi_form_with_ssids(None)
+    return _render_main_page()
+
+
+def _render_main_page():
+    led = supportjson.readFromJSON("LED_BRIGHTNESS")
+    cross = supportjson.readFromJSON("CROSSWIND_THRESHOLD_KTS")
+
+    led_s = "" if led is None else str(led)
+    cross_s = "" if cross is None else str(cross)
+
+    html = WIFI_HTML_MAIN_TEMPLATE
+    html = html.replace("__LED_BRIGHTNESS__", led_s)
+    html = html.replace("__CROSSWIND_THRESHOLD__", cross_s)
+    return html
 
 
 def _html_escape(s):
@@ -328,32 +425,39 @@ def _update_cached_scan_ssids(ssids):
         _ap_last_scan_ms = 0
 
 
-def _render_wifi_form_with_ssids(ssids):
-    led = supportjson.readFromJSON("LED_BRIGHTNESS")
-    cross = supportjson.readFromJSON("CROSSWIND_THRESHOLD_KTS")
+def _render_wifi_form_with_ssids(ssids, ssid_value_override=None):
     current_ssid = supportjson.readFromJSON("WIFI_SSID")
-
-    led_s = "" if led is None else str(led)
-    cross_s = "" if cross is None else str(cross)
-    ssid_value = "" if current_ssid is None else str(current_ssid)
+    # Pre-fill SSID so user can tweak it, but still allow full custom edits.
+    # If override is provided (e.g. after Scan), use that value.
+    if ssid_value_override is None:
+        ssid_value = "" if current_ssid is None else str(current_ssid)
+    else:
+        ssid_value = "" if ssid_value_override is None else str(ssid_value_override)
 
     # If caller didn't provide scan results, use cached (if any).
     if ssids is None:
         ssids = _get_cached_scan_ssids() or []
 
-    options = ["<option value=\"\">-- select --</option>"]
-    for s in ssids:
-        esc = _html_escape(s)
-        sel = ""
-        if current_ssid is not None and str(s) == str(current_ssid):
-            sel = " selected"
-        options.append("<option value=\"{}\"{}>{}</option>".format(esc, sel, esc))
+    scan_results_block = ""
+    if ssids:
+        options = ["<option value=\"\">Select a network...</option>"]
+        for s in ssids:
+            esc = _html_escape(s)
+            options.append("<option value=\"{}\">{}</option>".format(esc, esc))
 
-    html = WIFI_HTML_FORM_TEMPLATE
-    html = html.replace("__LED_BRIGHTNESS__", led_s)
-    html = html.replace("__CROSSWIND_THRESHOLD__", cross_s)
+        scan_results_block = (
+            "<label>Scan Results:"  # shown only after Scan
+            "<select onchange=\"document.getElementById('ssid_input').value=this.value\" "
+            "style=\"width:100%; padding:10px; border:1px solid #cfd6dd; border-radius:8px; box-sizing:border-box;\">"
+            + "\n".join(options)
+            + "</select></label>"
+        )
+
+    html = WIFI_HTML_WIFI_TEMPLATE
     html = html.replace("__SSID_VALUE__", _html_escape(ssid_value))
-    html = html.replace("__SSID_OPTIONS__", "\n".join(options))
+    html = html.replace("__SCAN_RESULTS_BLOCK__", scan_results_block)
+    current_ssid_s = "" if current_ssid is None else str(current_ssid)
+    html = html.replace("__CURRENT_SSID__", _html_escape(current_ssid_s))
     return html
 
 
@@ -492,7 +596,11 @@ def startupAccessPointConfigPortal():
                     continue
 
                 first_line = req_str[:first_line_end]
-                method = first_line.split(' ')[0]
+                parts = first_line.split(' ')
+                method = parts[0] if len(parts) > 0 else "GET"
+                path = parts[1] if len(parts) > 1 else "/"
+                if '?' in path:
+                    path = path.split('?', 1)[0]
 
                 if "\r\n\r\n" in req_str:
                     headers, body = req_str.split("\r\n\r\n", 1)
@@ -501,56 +609,81 @@ def startupAccessPointConfigPortal():
 
                 if method == "POST":
                     params = _ap_parse_post_body(body)
-                    ssid = params.get("ssid", "")
-                    ssid_select = params.get("ssid_select", "")
-                    password = params.get("password", "")
-                    led_brightness = params.get("led_brightness", "")
-                    crosswind_threshold = params.get("crosswind_threshold", "")
                     action = params.get("action", "Save")
 
-                    # If manual SSID is blank, use selected SSID.
-                    if (ssid is None or str(ssid).strip() == "") and ssid_select:
-                        ssid = ssid_select
+                    if path == "/wifi":
+                        ssid = params.get("ssid", "")
+                        password = params.get("password", "")
 
-                    if action == "Scan":
-                        ssids = _scan_ssids()
-                        _update_cached_scan_ssids(ssids)
-                        _ap_send(cl, _render_wifi_form_with_ssids(ssids))
+                        # Normalize SSID input; blank is allowed and will clear SSID.
+                        try:
+                            ssid = str(ssid).strip()
+                        except Exception:
+                            ssid = ""
+
+                        if action == "Scan":
+                            ssids = _scan_ssids()
+                            _update_cached_scan_ssids(ssids)
+                            # Per UX: scanning blanks the SSID input (UI-only).
+                            _ap_send(cl, _render_wifi_form_with_ssids(ssids, ssid_value_override=""))
+                            try:
+                                cl.close()
+                            except Exception:
+                                pass
+                            continue
+
+                        if action == "Save WiFi":
+                            _save_wifi_config(ssid, password)
+                            _ap_send(cl, _render_main_page())
+                            try:
+                                cl.close()
+                            except Exception:
+                                pass
+                            continue
+
+                        # Fallback: show wifi page
+                        _ap_send(cl, _render_wifi_form_with_ssids(None))
                         try:
                             cl.close()
                         except Exception:
                             pass
                         continue
 
-                    print("\n=== WiFi settings received ===")
-                    print("SSID:     '{}'".format(ssid))
-                    print("Password: '{}'".format(password))
-                    print("==============================\n")
+                    # Main page POST
+                    led_brightness = params.get("led_brightness", "")
+                    crosswind_threshold = params.get("crosswind_threshold", "")
 
-                    # Save to config.json
+                    if action == "WiFi Settings":
+                        _ap_send(cl, _render_wifi_form_with_ssids(None))
+                        try:
+                            cl.close()
+                        except Exception:
+                            pass
+                        continue
+
                     if action == "Update":
-                        # Optionally persist SSID/password if provided along with Update.
-                        _save_wifi_config(ssid, password)
-                        _save_board_config(led_brightness, crosswind_threshold)
                         _ap_send(cl, WIFI_HTML_UPDATE)
                         try:
                             cl.close()
                         except Exception:
                             pass
-                        # Set flag and reboot.
                         _set_update_mode_and_reset()
                         break
-                    else:
-                        _save_wifi_config(ssid, password)
-                        _save_board_config(led_brightness, crosswind_threshold)
-                        _ap_send(cl, WIFI_HTML_OK)
-                        try:
-                            cl.close()
-                        except Exception:
-                            pass
-                        break
+
+                    # Save main settings
+                    _save_board_config(led_brightness, crosswind_threshold)
+                    # Per UX: saving from the main page should close AP mode.
+                    _ap_send(cl, WIFI_HTML_OK)
+                    try:
+                        cl.close()
+                    except Exception:
+                        pass
+                    break
                 else:
-                    _ap_send(cl, _render_wifi_form())
+                    if path == "/wifi":
+                        _ap_send(cl, _render_wifi_form_with_ssids(None))
+                    else:
+                        _ap_send(cl, _render_main_page())
                     try:
                         cl.close()
                     except Exception:
@@ -955,6 +1088,28 @@ def startupWifi():
         MAX_WIFI_WAIT = supportjson.readFromJSON("MAX_WIFI_WAIT")
 
     print("WiFi Config - SSID:", WIFI_SSID, "Password:", WIFI_PASSWORD, "Max Wait:", MAX_WIFI_WAIT)
+
+    # If SSID is blank, treat WiFi as not configured.
+    if WIFI_SSID is None or str(WIFI_SSID).strip() == "":
+        try:
+            DisplayI2C.displayClear()
+            DisplayI2C.display_row0 = "WiFi"
+            DisplayI2C.display_row1 = "Not Configured"
+            DisplayI2C.display_row3 = "SSID"
+            DisplayI2C.display_row4 = "(none)"
+            DisplayI2C.display_row6 = "AP Button"
+            DisplayI2C.display_row7 = "to Setup"
+            DisplayI2C.displayRefresh()
+        except Exception:
+            pass
+
+        return {
+            "wifi_connected": False,
+            "internet_ok": False,
+            "reason": "no_ssid_configured",
+            "status": None,
+            "ssid_found": False,
+        }
     
     #Setup display for WiFi Connection Status
     DisplayI2C.displayClear()
