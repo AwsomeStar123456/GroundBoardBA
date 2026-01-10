@@ -229,6 +229,15 @@ if supportjson.readFromJSON("UPDATE_MODE"):
         while True:
             sleep(5)
 
+DisplayI2C.displayClear()
+DisplayI2C.display_row3 = "Software Version"
+DisplayI2C.display_row4 = "1.0.0.0"
+
+DisplayI2C.display_row5 = "Date of Release"
+DisplayI2C.display_row6 = "2024-06-01"
+DisplayI2C.displayRefresh()
+sleep(5)
+DisplayI2C.displayClear()
 
 ButtonPy.startupButtons()
 WiFi.startupMetar()

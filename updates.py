@@ -43,6 +43,26 @@ DEFAULT_FALLBACK_FILES = [
 ]
 
 
+def _iso8601_utc_from_unix(ts):
+	# Return e.g. "2026-01-09T12:34:56Z". Best-effort.
+	try:
+		tm = time.gmtime(int(ts))
+		return "{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}Z".format(
+			tm[0], tm[1], tm[2], tm[3], tm[4], tm[5]
+		)
+	except Exception:
+		return None
+
+
+def _utc_now_iso8601():
+	try:
+		# In MicroPython this is seconds since epoch if RTC/NTP is set.
+		now = time.time()
+		return _iso8601_utc_from_unix(now)
+	except Exception:
+		return None
+
+
 def _sleep_ms(ms):
 	try:
 		time.sleep_ms(ms)
@@ -402,6 +422,15 @@ def run_update(connect_wifi=True):
 				return False, {"reason": "no_internet", "wifi": st}
 		except Exception as e:
 			return False, {"reason": "wifi_error", "error": str(e)}
+
+	# Record that an update check/run happened (best-effort).
+	# Do this after WiFi/NTP setup so the timestamp is likely correct.
+	try:
+		ts = _utc_now_iso8601()
+		if ts:
+			supportjson.writeToJSON("LAST_UPDATE_CHECK", ts)
+	except Exception:
+		pass
 
 	print("Update starting: repo=", repo, "branch=", branch, "subdir=", subdir)
 
