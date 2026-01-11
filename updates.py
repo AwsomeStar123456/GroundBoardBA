@@ -39,6 +39,7 @@ DEFAULT_FALLBACK_FILES = [
 	"utils/i2cdisplay.py",
 	"utils/jsonsupport.py",
 	"utils/led.py",
+	"utils/version.py",
 	"utils/wifi.py",
 ]
 

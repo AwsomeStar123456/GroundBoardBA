@@ -9,6 +9,12 @@ import utils.wifi as WiFi
 import utils.jsonsupport as supportjson
 import updates
 
+try:
+    from utils.version import CURRENT_SW_VERSION, RELEASE_DATE
+except Exception:
+    CURRENT_SW_VERSION = "9.9.9.9"
+    RELEASE_DATE = "ERROR"
+
 time_since_last_metar = 0
 metar_data = None
 
@@ -17,6 +23,8 @@ metar_data = None
 RUNWAY_HEADINGS = None
 LED_BRIGHTNESS = None
 CROSSWIND_THRESHOLD_KTS = None
+METAR_UPDATE_INTERVAL_S = None
+DISPLAY_MODE = None
 
 
 def _short(s, max_len=16):
@@ -157,6 +165,131 @@ def format_unix_utc(ts):
     return "{:04d}-{:02d}-{:02d} {:02d}:{:02d}Z".format(tm[0], tm[1], tm[2], tm[3], tm[4])
 
 
+def metar_ceiling_ft(metar):
+    """Return ceiling in feet AGL (int) or None if no ceiling.
+
+    Ceiling is the lowest cloud base with cover BKN/OVC, or vertical visibility (VV).
+    This matches aviation usage: FEW/SCT are not ceilings.
+    Expects METAR dict similar to AviationWeather.gov JSON (metar.get('clouds') list).
+    """
+    if not isinstance(metar, dict):
+        return None
+
+    clouds = metar.get("clouds")
+    if not isinstance(clouds, list) or not clouds:
+        return None
+
+    ceiling = None
+    for layer in clouds:
+        if not isinstance(layer, dict):
+            continue
+        cover = layer.get("cover")
+        base = layer.get("base")
+        if cover is None or base is None:
+            continue
+        try:
+            base_ft = int(base)
+        except Exception:
+            continue
+
+        cover = str(cover).upper()
+        if cover in ("BKN", "OVC", "VV"):
+            if ceiling is None or base_ft < ceiling:
+                ceiling = base_ft
+
+    return ceiling
+
+
+def metar_condition_str(metar):
+    """Return a readable condition string like 'Clear', 'Cloudy', 'Overcast', 'Rain', 'Snow'.
+
+    Priority:
+    1) wxString (precip/obstructions) when present
+    2) cloud cover summary (OVC/BKN/SCT/FEW/CLR/SKC)
+    """
+    if not isinstance(metar, dict):
+        return "Unknown"
+
+    wx = metar.get("wxString")
+    if wx:
+        wxu = str(wx).upper()
+        # Thunderstorms
+        if "TS" in wxu:
+            return "Thunder"
+        # Frozen precip first
+        if "SN" in wxu:
+            return "Snow"
+        if "PL" in wxu:
+            return "Ice Pellets"
+        if "FZRA" in wxu or "FZDZ" in wxu:
+            return "Freezing"
+        # Liquid precip
+        if "RA" in wxu:
+            return "Rain"
+        if "DZ" in wxu:
+            return "Drizzle"
+        # Obstructions
+        if "FG" in wxu:
+            return "Fog"
+        if "BR" in wxu:
+            return "Mist"
+        if "HZ" in wxu:
+            return "Haze"
+
+    # Cloud-only fallback
+    cover = metar.get("cover")
+    cover_u = str(cover).upper() if cover is not None else ""
+
+    # Some feeds use CLR/SKC, some omit cover entirely.
+    if cover_u in ("CLR", "SKC"):
+        return "Clear"
+
+    clouds = metar.get("clouds")
+    best = None
+    if isinstance(clouds, list):
+        # Pick the most significant cover present.
+        rank = {"OVC": 4, "BKN": 3, "SCT": 2, "FEW": 1, "CLR": 0, "SKC": 0}
+        for layer in clouds:
+            if not isinstance(layer, dict):
+                continue
+            c = layer.get("cover")
+            if not c:
+                continue
+            cu = str(c).upper()
+            if cu not in rank:
+                continue
+            if best is None or rank[cu] > rank.get(best, -1):
+                best = cu
+
+    # Prefer computed best cover over top-level cover.
+    cover_u = best or cover_u
+
+    if cover_u == "OVC":
+        return "Overcast"
+    if cover_u == "BKN":
+        return "Cloudy"
+    if cover_u == "SCT":
+        return "Partly"
+    if cover_u == "FEW":
+        return "Mostly Clr"
+
+    # If we truly have no cloud info, treat as clear-ish.
+    if not cover_u:
+        return "Clear"
+
+    return "Cloudy"
+
+
+def APButtonAction():
+    print("AP Button Pressed - Starting AP Mode")
+    LED.ledObject.fill((0,10,10))
+    LED.ledObject.write()
+    ButtonPy.consumeApPressed()
+    DisplayI2C.displayClear()
+    WiFi.startupAccessPointConfigPortal()
+    DisplayI2C.displayClear()
+    machine.reset()
+
 print("Starting Ground Board BA...")
 
 #-----Initialization-----
@@ -170,11 +303,21 @@ if CROSSWIND_THRESHOLD_KTS is None:
     CROSSWIND_THRESHOLD_KTS = 10
 print("CROSSWIND_THRESHOLD_KTS set to", CROSSWIND_THRESHOLD_KTS)
 
+METAR_UPDATE_INTERVAL_S = supportjson.readFromJSON("TIME_SINCE_LAST_METAR_UPDATE_S")
+if METAR_UPDATE_INTERVAL_S is None:
+    METAR_UPDATE_INTERVAL_S = 600
+print("METAR_UPDATE_INTERVAL_S set to", METAR_UPDATE_INTERVAL_S)
+
+DISPLAY_MODE = supportjson.readFromJSON("DISPLAY_MODE")
+if DISPLAY_MODE is None:
+    DISPLAY_MODE = "Normal"
+print("DISPLAY_MODE set to", DISPLAY_MODE)
+
 #Display Initialization
 DisplayI2C.startupDisplay()
 
 DisplayI2C.display_row0 = "Binary Aviation"
-DisplayI2C.display_row1 = "METAR Board"
+DisplayI2C.display_row1 = "RunwaySense"
 DisplayI2C.display_row3 = "Display"
 DisplayI2C.display_row4 = "Initialized"
 DisplayI2C.displayRefresh()
@@ -186,8 +329,19 @@ DisplayI2C.displayRefresh()
 
 LED.startupLED()
 
+ButtonPy.startupButtons()
+
+# Route AP button presses directly to the main handler (scheduled out of IRQ).
+try:
+    ButtonPy.set_ap_callback(lambda _arg: APButtonAction())
+except Exception as e:
+    print("Failed to register AP callback:", e)
+
 DisplayI2C.display_row7 = "Initialized"
 DisplayI2C.displayRefresh()
+
+sleep(1)
+
 
 if supportjson.readFromJSON("UPDATE_MODE"):
     DisplayI2C.displayClear()
@@ -230,16 +384,18 @@ if supportjson.readFromJSON("UPDATE_MODE"):
             sleep(5)
 
 DisplayI2C.displayClear()
-DisplayI2C.display_row3 = "Software Version"
-DisplayI2C.display_row4 = "1.0.0.0"
+DisplayI2C.display_row0 = "Binary Aviation"
+DisplayI2C.display_row1 = "RunwaySense"
 
-DisplayI2C.display_row5 = "Date of Release"
-DisplayI2C.display_row6 = "2024-06-01"
+DisplayI2C.display_row3 = "Software Version"
+DisplayI2C.display_row4 = CURRENT_SW_VERSION
+
+DisplayI2C.display_row6 = "Date of Release"
+DisplayI2C.display_row7 = RELEASE_DATE
 DisplayI2C.displayRefresh()
-sleep(5)
+sleep(10)
 DisplayI2C.displayClear()
 
-ButtonPy.startupButtons()
 WiFi.startupMetar()
 WiFi.resetWifi()
 
@@ -250,98 +406,164 @@ DisplayI2C.displayClear()
 #print(WiFi.get_metar_raw())
 while True:
 
-    # Always define this so we don't NameError when fetch doesn't happen.
     metar_data = None
 
-    if not WiFi.wlan.isconnected():
-        DisplayI2C.displayClear()
-        wifiStatus = WiFi.startupWifi()
-        sleep(5)
-        DisplayI2C.displayClear()
+    try:
 
-    print("Checking internet connectivity...")
-    if WiFi.wlan.isconnected():
-        print("WiFi connected!")
-        internet_ok = WiFi._internet_check_google()
-    else:
-        print("WiFi not connected!")
-        internet_ok = False
+        if not WiFi.wlan.isconnected():
+            DisplayI2C.displayClear()
+            wifiStatus = WiFi.startupWifi()
+            sleep(5)
+            DisplayI2C.displayClear()
 
-    print("Internet connectivity:", internet_ok)
-    DisplayI2C.display_row0= "WiFi Status"
-
-    if internet_ok:
-        DisplayI2C.display_row1 = "Connected"
-        try:
-            metar_data = WiFi.get_metar_raw()
-        except Exception as e:
-            print("METAR fetch failed:", e)
-            metar_data = None
-        print('METAR data:', metar_data)
-    else:
-        DisplayI2C.display_row1 = "Disconnected"
-    #DisplayI2C.displayRefresh()
-
-    if metar_data and isinstance(metar_data, list):
-        metar = metar_data[0]
-        wind_speed = metar.get('wspd')
-        wind_dir = metar.get('wdir')
-        temp = metar.get('temp')
-        flight_cat = metar.get('fltCat')
-        obstime_time = metar.get('obsTime')
-
-        print("Wind:", wind_dir, "degrees @", wind_speed, "kt")
-        print("Temperature:", temp, "°C")
-        print("Flight Category:", flight_cat)
-        print("METAR Time:", obstime_time)
-
-        leds_set_colors(wind_dir, wind_speed)
-
-        DisplayI2C.display_row3 = "Last Poll Time"
-        DisplayI2C.display_row6 = "Metar Observed"
-        
-        # Zulu / UTC time (after WiFi NTP sync)
-        t = utime.gmtime()
-        print("{:02d}:{:02d}Z".format(t[3], t[4]))
-        DisplayI2C.display_row4 = "{:02d}:{:02d}Z".format(t[3], t[4])
-
-        obsTimeFormatted = format_unix_utc(obstime_time)
-        print("Formatted obsTime:", obsTimeFormatted)
-        DisplayI2C.display_row7 = obsTimeFormatted
-    else:
-        print("Unexpected or no METAR format")
-        wifiNoConnectReason = wifiStatus["reason"]
-        print("WiFi No Connect Reason:", wifiNoConnectReason)
-
-        DisplayI2C.display_row3 = "Failiure Reason"
-        if wifiNoConnectReason == "no_ssid_found":
-            DisplayI2C.display_row4 = "AP Not Found"
-        elif wifiNoConnectReason == "password_incorrect":
-            DisplayI2C.display_row4 = "Bad Password"
+        print("Checking internet connectivity...")
+        if WiFi.wlan.isconnected():
+            print("WiFi connected!")
+            internet_ok = WiFi._internet_check_google()
         else:
-            DisplayI2C.display_row4 = "Connection ERR"
+            print("WiFi not connected!")
+            internet_ok = False
 
-        DisplayI2C.display_row6 = "Metar Observed"
-        DisplayI2C.display_row7 = "No METAR Data"
-        LED.ledObject.fill((0,0,10))
+        print("Internet connectivity:", internet_ok)
+        DisplayI2C.display_row0= "WiFi Status"
+
+        if internet_ok:
+            DisplayI2C.display_row1 = "Connected"
+            try:
+                metar_data = WiFi.get_metar_raw()
+            except Exception as e:
+                print("METAR fetch failed:", e)
+                metar_data = None
+            print('METAR data:', metar_data)
+        else:
+            DisplayI2C.display_row1 = "Disconnected"
+        #DisplayI2C.displayRefresh()
+
+        if metar_data and isinstance(metar_data, list):
+            metar = metar_data[0]
+            wind_speed = metar.get('wspd')
+            wind_gust = metar.get('wgst')
+            wind_dir = metar.get('wdir')
+            temp = metar.get('temp')
+            flight_cat = metar.get('fltCat')
+            obstime_time = metar.get('obsTime')
+
+            print("Wind:", wind_dir, "degrees @", wind_speed, "kt")
+            print("Temperature:", temp, "°C")
+            print("Flight Category:", flight_cat)
+            print("METAR Time:", obstime_time)
+
+            leds_set_colors(wind_dir, wind_speed)
+
+            DisplayI2C.display_row3 = "Last Poll Time"
+            DisplayI2C.display_row6 = "Metar Observed"
+            
+            # Zulu / UTC time (after WiFi NTP sync)
+            t = utime.gmtime()
+            print("{:02d}:{:02d}Z".format(t[3], t[4]))
+            DisplayI2C.display_row4 = "{:02d}:{:02d}Z".format(t[3], t[4])
+
+            obsTimeFormatted = format_unix_utc(obstime_time)
+            print("Formatted obsTime:", obsTimeFormatted)
+            DisplayI2C.display_row7 = obsTimeFormatted
+        else:
+            print("Unexpected or no METAR format")
+            wifiNoConnectReason = wifiStatus["reason"]
+            print("WiFi No Connect Reason:", wifiNoConnectReason)
+
+            DisplayI2C.display_row3 = "Failiure Reason"
+            if wifiNoConnectReason == "no_ssid_found":
+                DisplayI2C.display_row4 = "AP Not Found"
+            elif wifiNoConnectReason == "password_incorrect":
+                DisplayI2C.display_row4 = "Bad Password"
+            else:
+                DisplayI2C.display_row4 = "Connection ERR"
+
+            DisplayI2C.display_row6 = "Metar Observed"
+            DisplayI2C.display_row7 = "No METAR Data"
+            LED.ledObject.fill((0,0,10))
+            LED.ledObject.write()
+
+
+        if(DISPLAY_MODE == "Normal" and metar_data and isinstance(metar_data, list)):
+            metarCondition = metar_condition_str(metar)
+
+            
+            DisplayI2C.displayClear()
+            #DisplayI2C.displaySetBitmap("arrow", Arrow, 24, 24, 10, 18, layer="bg")
+            DisplayI2C.display_row0 = "     " + metar_condition_str(metar)
+
+            ceiling_ft = metar_ceiling_ft(metar)
+            if ceiling_ft is None:
+                DisplayI2C.display_row1 = "     "
+            else:
+                DisplayI2C.display_row1 = "     " + str(ceiling_ft) + " ft"
+
+            
+            icon = None
+            if metarCondition == "Clear":
+                icon = DisplayI2C.ByteSunny
+            elif metarCondition in ("Mostly Clr", "Partly"):
+                icon = DisplayI2C.BytePartlyCloudy
+            elif metarCondition in ("Cloudy", "Overcast"):
+                icon = DisplayI2C.ByteCloudy
+            elif metarCondition == "Thunder":
+                icon = DisplayI2C.ByteThunderStorm
+            elif metarCondition in ("Snow", "Ice Pellets", "Freezing"):
+                icon = DisplayI2C.ByteSnow
+            elif metarCondition in ("Rain", "Drizzle"):
+                icon = DisplayI2C.ByteRain
+            elif metarCondition in ("Fog", "Mist", "Haze"):
+                icon = DisplayI2C.ByteHaze
+            if icon is not None:
+                DisplayI2C.displaySetBitmap("clear", icon, 24, 24, 10, 0, layer="bg")
+
+                    
+
+            if(wind_speed == 0):
+                DisplayI2C.displaySetBitmap("arrow", DisplayI2C.ByteCalm, 24, 24, 10, 24, layer="bg", quantize_deg=5)
+                DisplayI2C.display_row3 = "     0 @ 0 kt"
+            else:
+                # METAR wind_dir is the direction the wind is FROM.
+                # For a "wind is going" arrow, flip 180 degrees.
+                arrow_dir = (int(wind_dir) + 180) % 360
+                DisplayI2C.displaySetBitmapRotated("arrow", DisplayI2C.Arrow, 24, 24, 10, 24, arrow_dir, layer="bg", quantize_deg=5)
+                DisplayI2C.display_row3 = "     " + str(wind_dir) + " @ " + str(wind_speed) + " kt"
+
+            if(wind_speed == 0):
+                DisplayI2C.display_row4 = "     Wind Calm"
+            elif(wind_gust is None):
+                DisplayI2C.display_row4 = ""
+            else:
+                DisplayI2C.display_row4 = "     Gust " + str(wind_gust) + " kt"
+
+            DisplayI2C.display_row6 = "Metar Observed"
+            DisplayI2C.display_row7 = obsTimeFormatted
+            DisplayI2C.displayRefresh()
+            sleep(5)
+
+        DisplayI2C.displayRefresh()
+    except Exception as e:
+        print("Main loop exception:", e)
+        DisplayI2C.displayClear()
+        DisplayI2C.display_row3 = "Major Error"
+        DisplayI2C.displayRefresh()
+        LED.ledObject.fill((10,10,10))
         LED.ledObject.write()
+    
+    # If we failed to fetch METAR data, retry quickly.
+    # Otherwise, respect the configured update interval.
+    poll_interval_s = METAR_UPDATE_INTERVAL_S
 
-    DisplayI2C.displayRefresh()
+    if metar_data is None:
+        poll_interval_s = 30
 
-    while (ButtonPy.syncButtonPressed == False and time_since_last_metar < 600):
+    print("Next METAR fetch in", poll_interval_s, "seconds")
+
+    while ((ButtonPy.syncButtonPressed == False) and (time_since_last_metar < poll_interval_s)):
         utime.sleep(1)
         time_since_last_metar += 1
         print ("Time since last metar:", time_since_last_metar)
-
-        if(ButtonPy.apButtonPressed == True):
-            LED.ledObject.fill((0,10,10))
-            LED.ledObject.write()
-            print("AP Button Pressed - Starting AP Mode")
-            ButtonPy.consumeApPressed()
-            DisplayI2C.displayClear()
-            WiFi.startupAccessPointConfigPortal()
-            DisplayI2C.displayClear()
-            machine.reset()
 
     time_since_last_metar = 0
     ButtonPy.consumeSyncPressed()

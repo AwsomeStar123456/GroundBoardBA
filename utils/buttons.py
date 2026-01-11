@@ -2,6 +2,11 @@ from machine import Pin
 from utime import ticks_ms, ticks_diff
 import utils.jsonsupport as supportjson
 
+try:
+    import micropython
+except Exception:
+    micropython = None
+
 syncButtonPressed = False
 apButtonPressed = False
 
@@ -19,6 +24,31 @@ _ap_latched = False
 
 _last_irq_sync_ms = 0
 _last_irq_ap_ms = 0
+
+_ap_pressed_callback = None
+
+
+def set_ap_callback(callback):
+    """Register a callback to run when the AP button is pressed.
+
+    If MicroPython's scheduler is available, the callback will be invoked via
+    micropython.schedule() to keep the IRQ handler fast and safe.
+
+    The callback should accept one positional argument (the scheduled value).
+    """
+    global _ap_pressed_callback
+    _ap_pressed_callback = callback
+
+
+def _invoke_ap_callback(_arg):
+    cb = _ap_pressed_callback
+    if cb is None:
+        return
+    try:
+        cb(_arg)
+    except Exception as e:
+        # Best-effort: don't let callback exceptions destabilize the scheduler.
+        print("AP callback error:", e)
 
 def startupButtons():
     global BUTTON_PIN_SYNC, BUTTON_PIN_AP
@@ -66,31 +96,49 @@ def buttonPressed(pin):
     now = ticks_ms()
 
     if pin is _sync_button:
+        # Always honor release to avoid getting stuck latched if the release IRQ
+        # is filtered by debounce (common cause of missed next press).
+        if pin.value() != 0:
+            _sync_latched = False
+            return
+
+        # Debounce presses only.
         if ticks_diff(now, _last_irq_sync_ms) < _debounce_ms:
             return
         _last_irq_sync_ms = now
 
-        if pin.value() == 0:  # pressed (active-low)
-            if not _sync_latched:
-                _sync_latched = True
-                syncButtonPressed = True
-                print("SYNC Button Pressed")
-        else:  # released
-            _sync_latched = False
+        # pressed (active-low)
+        if not _sync_latched:
+            _sync_latched = True
+            syncButtonPressed = True
+            print("SYNC Button Pressed")
         return
 
     if pin is _ap_button:
+        # Always honor release to avoid getting stuck latched if the release IRQ
+        # is filtered by debounce.
+        if pin.value() != 0:
+            _ap_latched = False
+            return
+
+        # Debounce presses only.
         if ticks_diff(now, _last_irq_ap_ms) < _debounce_ms:
             return
         _last_irq_ap_ms = now
 
-        if pin.value() == 0:  # pressed (active-low)
-            if not _ap_latched:
-                _ap_latched = True
+        # pressed (active-low)
+        if not _ap_latched:
+            _ap_latched = True
+            if _ap_pressed_callback is not None and micropython is not None:
+                try:
+                    micropython.schedule(_invoke_ap_callback, 0)
+                except Exception as e:
+                    # Scheduler queue full or unsupported; fall back to flag.
+                    print("AP schedule failed:", e)
+                    apButtonPressed = True
+            else:
                 apButtonPressed = True
-                print("AP Button Pressed")
-        else:  # released
-            _ap_latched = False
+            print("AP Button Pressed")
         return
 
 

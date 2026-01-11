@@ -9,6 +9,11 @@ import utime
 import json
 
 try:
+    import utils.version as Version
+except Exception:
+    Version = None
+
+try:
     import machine
 except Exception:
     machine = None
@@ -53,9 +58,10 @@ Connection: close
         body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
         .wrap { max-width: 460px; margin: 20px auto; padding: 0 12px; }
         .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-        h2 { margin: 0 0 8px 0; }
+        h2 { margin: 0 0 8px 0; text-align: center; }
         p { margin: 8px 0; color: #333; }
         .hint { font-size: 0.92em; color: #555; }
+        .center { text-align: center; }
         label { display: block; margin-top: 12px; font-weight: 600; }
         input[type=text], input[type=password], input[type=number], select { width: 100%; padding: 10px; border: 1px solid #cfd6dd; border-radius: 8px; box-sizing: border-box; }
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -70,7 +76,9 @@ Connection: close
     <div class=\"wrap\">
         <div class=\"card\">
             <h2>Binary Aviation Ground Board</h2>
-            <p class=\"hint\">Main Settings</p>
+            <p class=\"hint center\">Software Version: <span class=\"mono\">__CURRENT_SW_VERSION__</span></p>
+            <p class=\"hint center\">Release Date: <span class=\"mono\">__RELEASE_DATE__</span></p>
+            <p class=\"hint center\">Main Settings</p>
 
             <form method=\"POST\" action=\"/\">
                 <div class=\"row\">
@@ -99,6 +107,48 @@ Connection: close
 """
 
 
+WIFI_HTML_UPDATE_CONFIRM = """\
+HTTP/1.1 200 OK
+Content-Type: text/html
+Connection: close
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=\"utf-8\">
+    <title>Confirm Update</title>
+    <style>
+                body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+                .wrap { max-width: 460px; margin: 20px auto; padding: 0 12px; }
+                .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+                h2 { margin: 0 0 8px 0; text-align: center; }
+                p { margin: 8px 0; color: #333; }
+                .hint { font-size: 0.92em; color: #555; }
+                .btns { display: flex; gap: 10px; margin-top: 14px; }
+                input[type=submit] { flex: 1; padding: 11px 12px; border: 0; border-radius: 8px; color: #fff; font-weight: 700; }
+                input[type=submit][value=\"Cancel\"] { background: #6e7781; }
+                input[type=submit][value=\"Confirm Update\"] { background: #2da44e; }
+    </style>
+</head>
+<body>
+    <div class=\"wrap\">
+        <div class=\"card\">
+            <h2>Confirm Update</h2>
+            <p>Are you sure you want to update?</p>
+            <p class=\"hint\">Make sure the unit stays powered on during the update.</p>
+            <form method=\"POST\" action=\"/\">
+                <div class=\"btns\">
+                    <input type=\"submit\" name=\"action\" value=\"Cancel\">
+                    <input type=\"submit\" name=\"action\" value=\"Confirm Update\">
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+
 WIFI_HTML_WIFI_TEMPLATE = """\
 HTTP/1.1 200 OK
 Content-Type: text/html
@@ -113,7 +163,7 @@ Connection: close
         body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
         .wrap { max-width: 460px; margin: 20px auto; padding: 0 12px; }
         .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
-        h2 { margin: 0 0 8px 0; }
+        h2 { margin: 0 0 8px 0; text-align: center; }
         p { margin: 8px 0; color: #333; }
         .hint { font-size: 0.92em; color: #555; }
         label { display: block; margin-top: 12px; font-weight: 600; }
@@ -154,6 +204,16 @@ Connection: close
                     <input type=\"password\" name=\"password\" placeholder=\"Leave blank for open network\">
                 </label>
 
+                <label>WiFi Timeout (seconds):
+                    <input type=\"number\" name=\"max_wifi_wait\" min=\"1\" max=\"300\" step=\"1\" value=\"__MAX_WIFI_WAIT__\" placeholder=\"30\">
+                </label>
+                <p class=\"hint\">Seconds before timeout in WiFi Connection</p>
+
+                <label>METAR Update Interval (seconds):
+                    <input type=\"number\" name=\"metar_update_interval_s\" min=\"300\" max=\"3600\" step=\"1\" value=\"__METAR_UPDATE_INTERVAL_S__\" placeholder=\"600\">
+                </label>
+                <p class=\"hint\">Seconds between METAR updates (5 minutes to 1 hour)</p>
+
                 <div class=\"btns\">
                     <input type=\"submit\" name=\"action\" value=\"Save WiFi\">
                     <a class=\"btn\" href=\"/\">Back</a>
@@ -178,7 +238,7 @@ Connection: close
   <title>Saved</title>
 </head>
 <body>
-    <h2>Saved</h2>
+    <h2 style=\"text-align:center;\">Saved</h2>
     <p>Settings were saved. Closing AP mode...</p>
     <p>You can now disconnect from this Wi-Fi network.</p>
 </body>
@@ -198,8 +258,8 @@ Connection: close
     <title>Updating</title>
 </head>
 <body>
-    <h2>Update Mode Enabled</h2>
-    <p>UPDATE_MODE was set to true in config.json.</p>
+    <h2 style=\"text-align:center;\">Update Mode Enabled</h2>
+    <p>Unit will now boot into Update Mode.</p>
     <p>Rebooting now...</p>
 </body>
 </html>
@@ -301,6 +361,21 @@ def _save_wifi_config(ssid, password):
     supportjson.writeToJSON("WIFI_PASSWORD", password)
 
 
+def _save_max_wifi_wait(max_wifi_wait):
+    # Optional: only update when a valid value is provided.
+    # Keep it bounded to avoid extremely long blocking waits.
+    n = _parse_int_in_range(max_wifi_wait, 1, 300)
+    if n is not None:
+        supportjson.writeToJSON("MAX_WIFI_WAIT", n)
+
+
+def _save_metar_update_interval_s(metar_update_interval_s):
+    # Clamp to 5 minutes..1 hour.
+    n = _parse_int_in_range(metar_update_interval_s, 300, 3600)
+    if n is not None:
+        supportjson.writeToJSON("TIME_SINCE_LAST_METAR_UPDATE_S", n)
+
+
 def _parse_int_in_range(value, min_value=0, max_value=100):
     if value is None:
         return None
@@ -337,12 +412,23 @@ def _render_main_page():
     led = supportjson.readFromJSON("LED_BRIGHTNESS")
     cross = supportjson.readFromJSON("CROSSWIND_THRESHOLD_KTS")
 
+    try:
+        ver = Version.CURRENT_SW_VERSION if Version is not None else ""
+    except Exception:
+        ver = ""
+    try:
+        rel = Version.RELEASE_DATE if Version is not None else ""
+    except Exception:
+        rel = ""
+
     led_s = "" if led is None else str(led)
     cross_s = "" if cross is None else str(cross)
 
     html = WIFI_HTML_MAIN_TEMPLATE
     html = html.replace("__LED_BRIGHTNESS__", led_s)
     html = html.replace("__CROSSWIND_THRESHOLD__", cross_s)
+    html = html.replace("__CURRENT_SW_VERSION__", _html_escape(ver))
+    html = html.replace("__RELEASE_DATE__", _html_escape(rel))
     return html
 
 
@@ -427,6 +513,8 @@ def _update_cached_scan_ssids(ssids):
 
 def _render_wifi_form_with_ssids(ssids, ssid_value_override=None):
     current_ssid = supportjson.readFromJSON("WIFI_SSID")
+    current_max_wait = supportjson.readFromJSON("MAX_WIFI_WAIT")
+    current_metar_interval = supportjson.readFromJSON("TIME_SINCE_LAST_METAR_UPDATE_S")
     # Pre-fill SSID so user can tweak it, but still allow full custom edits.
     # If override is provided (e.g. after Scan), use that value.
     if ssid_value_override is None:
@@ -458,6 +546,10 @@ def _render_wifi_form_with_ssids(ssids, ssid_value_override=None):
     html = html.replace("__SCAN_RESULTS_BLOCK__", scan_results_block)
     current_ssid_s = "" if current_ssid is None else str(current_ssid)
     html = html.replace("__CURRENT_SSID__", _html_escape(current_ssid_s))
+    max_wait_s = "" if current_max_wait is None else str(current_max_wait)
+    html = html.replace("__MAX_WIFI_WAIT__", _html_escape(max_wait_s))
+    metar_interval_s = "" if current_metar_interval is None else str(current_metar_interval)
+    html = html.replace("__METAR_UPDATE_INTERVAL_S__", _html_escape(metar_interval_s))
     return html
 
 
@@ -614,6 +706,8 @@ def startupAccessPointConfigPortal():
                     if path == "/wifi":
                         ssid = params.get("ssid", "")
                         password = params.get("password", "")
+                        max_wifi_wait = params.get("max_wifi_wait", "")
+                        metar_update_interval_s = params.get("metar_update_interval_s", "")
 
                         # Normalize SSID input; blank is allowed and will clear SSID.
                         try:
@@ -634,6 +728,8 @@ def startupAccessPointConfigPortal():
 
                         if action == "Save WiFi":
                             _save_wifi_config(ssid, password)
+                            _save_max_wifi_wait(max_wifi_wait)
+                            _save_metar_update_interval_s(metar_update_interval_s)
                             _ap_send(cl, _render_main_page())
                             try:
                                 cl.close()
@@ -662,6 +758,22 @@ def startupAccessPointConfigPortal():
                         continue
 
                     if action == "Update":
+                        _ap_send(cl, WIFI_HTML_UPDATE_CONFIRM)
+                        try:
+                            cl.close()
+                        except Exception:
+                            pass
+                        continue
+
+                    if action == "Cancel":
+                        _ap_send(cl, _render_main_page())
+                        try:
+                            cl.close()
+                        except Exception:
+                            pass
+                        continue
+
+                    if action == "Confirm Update":
                         _ap_send(cl, WIFI_HTML_UPDATE)
                         try:
                             cl.close()

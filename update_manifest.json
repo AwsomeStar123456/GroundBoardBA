@@ -9,5 +9,6 @@
   "utils/i2cdisplay.py",
   "utils/jsonsupport.py",
   "utils/led.py",
+  "utils/version.py",
   "utils/wifi.py"
 ]
