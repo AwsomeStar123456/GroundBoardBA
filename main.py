@@ -267,11 +267,11 @@ def metar_condition_str(metar):
     if cover_u == "OVC":
         return "Overcast"
     if cover_u == "BKN":
-        return "Cloudy"
+        return "Broken"
     if cover_u == "SCT":
-        return "Partly"
+        return "Scattered"
     if cover_u == "FEW":
-        return "Mostly Clr"
+        return "Few"
 
     # If we truly have no cloud info, treat as clear-ish.
     if not cover_u:
@@ -407,6 +407,7 @@ DisplayI2C.displayClear()
 while True:
 
     metar_data = None
+    DisplayI2C.displayClear()
 
     try:
 
@@ -503,9 +504,9 @@ while True:
             icon = None
             if metarCondition == "Clear":
                 icon = DisplayI2C.ByteSunny
-            elif metarCondition in ("Mostly Clr", "Partly"):
+            elif metarCondition in ("Few", "Scattered"):
                 icon = DisplayI2C.BytePartlyCloudy
-            elif metarCondition in ("Cloudy", "Overcast"):
+            elif metarCondition in ("Broken", "Overcast"):
                 icon = DisplayI2C.ByteCloudy
             elif metarCondition == "Thunder":
                 icon = DisplayI2C.ByteThunderStorm
@@ -556,7 +557,7 @@ while True:
     poll_interval_s = METAR_UPDATE_INTERVAL_S
 
     if metar_data is None:
-        poll_interval_s = 30
+        poll_interval_s = 3
 
     print("Next METAR fetch in", poll_interval_s, "seconds")
 

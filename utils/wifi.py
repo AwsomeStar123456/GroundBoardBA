@@ -47,6 +47,9 @@ _ap_last_scan_ms = 0
 WIFI_HTML_MAIN_TEMPLATE = """\
 HTTP/1.1 200 OK
 Content-Type: text/html
+Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+Pragma: no-cache
+Expires: 0
 Connection: close
 
 <!DOCTYPE html>
@@ -63,7 +66,10 @@ Connection: close
         .hint { font-size: 0.92em; color: #555; }
         .center { text-align: center; }
         label { display: block; margin-top: 12px; font-weight: 600; }
-        input[type=text], input[type=password], input[type=number], select { width: 100%; padding: 10px; border: 1px solid #cfd6dd; border-radius: 8px; box-sizing: border-box; }
+        input[type=text], input[type=password], input[type=number], select { width: 100%; padding: 10px; border: 1px solid #cfd6dd; border-radius: 8px; box-sizing: border-box; font: inherit; background: #fff; }
+        input[type=number] { appearance: textfield; -moz-appearance: textfield; }
+        input[type=number]::-webkit-outer-spin-button,
+        input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .btns { display: flex; gap: 10px; margin-top: 14px; }
         input[type=submit] { flex: 1; padding: 11px 12px; border: 0; border-radius: 8px; background: #1f6feb; color: #fff; font-weight: 700; }
@@ -92,6 +98,16 @@ Connection: close
                             <input type=\"number\" name=\"crosswind_threshold\" min=\"0\" max=\"100\" step=\"1\" value=\"__CROSSWIND_THRESHOLD__\">
                         </label>
                     </div>
+
+                    <div>
+                        <label>Display Mode:
+                            <select name=\"display_mode\">
+                                <option value=\"Normal\" __DISPLAY_MODE_NORMAL_SELECTED__>Normal</option>
+                                <option value=\"Debug\" __DISPLAY_MODE_DEBUG_SELECTED__>Debug</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div></div>
                 </div>
 
                 <div class=\"btns\">
@@ -110,6 +126,9 @@ Connection: close
 WIFI_HTML_UPDATE_CONFIRM = """\
 HTTP/1.1 200 OK
 Content-Type: text/html
+Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+Pragma: no-cache
+Expires: 0
 Connection: close
 
 <!DOCTYPE html>
@@ -152,6 +171,9 @@ Connection: close
 WIFI_HTML_WIFI_TEMPLATE = """\
 HTTP/1.1 200 OK
 Content-Type: text/html
+Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+Pragma: no-cache
+Expires: 0
 Connection: close
 
 <!DOCTYPE html>
@@ -167,7 +189,10 @@ Connection: close
         p { margin: 8px 0; color: #333; }
         .hint { font-size: 0.92em; color: #555; }
         label { display: block; margin-top: 12px; font-weight: 600; }
-      input[type=text], input[type=password] { width: 100%; padding: 10px; border: 1px solid #cfd6dd; border-radius: 8px; box-sizing: border-box; }
+                input[type=text], input[type=password], input[type=number], select { width: 100%; padding: 10px; border: 1px solid #cfd6dd; border-radius: 8px; box-sizing: border-box; font: inherit; background: #fff; }
+                input[type=number] { appearance: textfield; -moz-appearance: textfield; }
+                input[type=number]::-webkit-outer-spin-button,
+                input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         .btns { display: flex; gap: 10px; margin-top: 14px; }
         input[type=submit], a.btn { flex: 1; padding: 11px 12px; border: 0; border-radius: 8px; background: #1f6feb; color: #fff; font-weight: 700; text-align: center; text-decoration: none; display: inline-block; box-sizing: border-box; }
         input[type=submit][value=Scan] { background: #6e7781; }
@@ -229,6 +254,9 @@ Connection: close
 WIFI_HTML_OK = """\
 HTTP/1.1 200 OK
 Content-Type: text/html
+Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+Pragma: no-cache
+Expires: 0
 Connection: close
 
 <!DOCTYPE html>
@@ -249,6 +277,9 @@ Connection: close
 WIFI_HTML_UPDATE = """\
 HTTP/1.1 200 OK
 Content-Type: text/html
+Cache-Control: no-store, no-cache, must-revalidate, max-age=0
+Pragma: no-cache
+Expires: 0
 Connection: close
 
 <!DOCTYPE html>
@@ -404,6 +435,23 @@ def _save_board_config(led_brightness, crosswind_threshold):
         supportjson.writeToJSON("CROSSWIND_THRESHOLD_KTS", cross)
 
 
+def _save_display_mode(display_mode):
+    # Allowed values: Normal / Debug (case-insensitive). Anything else -> no change.
+    if display_mode is None:
+        return
+    try:
+        s = str(display_mode).strip()
+    except Exception:
+        return
+    if not s:
+        return
+    s_lower = s.lower()
+    if s_lower == "normal":
+        supportjson.writeToJSON("DISPLAY_MODE", "Normal")
+    elif s_lower == "debug":
+        supportjson.writeToJSON("DISPLAY_MODE", "Debug")
+
+
 def _render_wifi_form():
     return _render_main_page()
 
@@ -411,6 +459,7 @@ def _render_wifi_form():
 def _render_main_page():
     led = supportjson.readFromJSON("LED_BRIGHTNESS")
     cross = supportjson.readFromJSON("CROSSWIND_THRESHOLD_KTS")
+    display_mode = supportjson.readFromJSON("DISPLAY_MODE")
 
     try:
         ver = Version.CURRENT_SW_VERSION if Version is not None else ""
@@ -424,9 +473,16 @@ def _render_main_page():
     led_s = "" if led is None else str(led)
     cross_s = "" if cross is None else str(cross)
 
+    dm = "Normal" if not display_mode else str(display_mode).strip()
+    dm_lower = dm.lower()
+    normal_selected = "selected" if dm_lower != "debug" else ""
+    debug_selected = "selected" if dm_lower == "debug" else ""
+
     html = WIFI_HTML_MAIN_TEMPLATE
     html = html.replace("__LED_BRIGHTNESS__", led_s)
     html = html.replace("__CROSSWIND_THRESHOLD__", cross_s)
+    html = html.replace("__DISPLAY_MODE_NORMAL_SELECTED__", normal_selected)
+    html = html.replace("__DISPLAY_MODE_DEBUG_SELECTED__", debug_selected)
     html = html.replace("__CURRENT_SW_VERSION__", _html_escape(ver))
     html = html.replace("__RELEASE_DATE__", _html_escape(rel))
     return html
@@ -535,8 +591,7 @@ def _render_wifi_form_with_ssids(ssids, ssid_value_override=None):
 
         scan_results_block = (
             "<label>Scan Results:"  # shown only after Scan
-            "<select onchange=\"document.getElementById('ssid_input').value=this.value\" "
-            "style=\"width:100%; padding:10px; border:1px solid #cfd6dd; border-radius:8px; box-sizing:border-box;\">"
+            "<select onchange=\"document.getElementById('ssid_input').value=this.value\">"
             + "\n".join(options)
             + "</select></label>"
         )
@@ -748,6 +803,7 @@ def startupAccessPointConfigPortal():
                     # Main page POST
                     led_brightness = params.get("led_brightness", "")
                     crosswind_threshold = params.get("crosswind_threshold", "")
+                    display_mode = params.get("display_mode", "")
 
                     if action == "WiFi Settings":
                         _ap_send(cl, _render_wifi_form_with_ssids(None))
@@ -784,6 +840,7 @@ def startupAccessPointConfigPortal():
 
                     # Save main settings
                     _save_board_config(led_brightness, crosswind_threshold)
+                    _save_display_mode(display_mode)
                     # Per UX: saving from the main page should close AP mode.
                     _ap_send(cl, WIFI_HTML_OK)
                     try:
