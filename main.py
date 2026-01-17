@@ -425,6 +425,14 @@ while True:
             print("WiFi not connected!")
             internet_ok = False
 
+        if internet_ok == False:
+            if WiFi.wlan.isconnected():
+                print("WiFi connected!")
+                internet_ok = WiFi._internet_check_google()
+            else:
+                print("WiFi not connected!")
+                internet_ok = False
+
         print("Internet connectivity:", internet_ok)
         DisplayI2C.display_row0= "WiFi Status"
 
@@ -435,6 +443,14 @@ while True:
             except Exception as e:
                 print("METAR fetch failed:", e)
                 metar_data = None
+
+            if metar_data is None:
+                try:
+                    metar_data = WiFi.get_metar_raw()
+                except Exception as e:
+                    print("METAR fetch failed:", e)
+                    metar_data = None
+
             print('METAR data:', metar_data)
         else:
             DisplayI2C.display_row1 = "Disconnected"
