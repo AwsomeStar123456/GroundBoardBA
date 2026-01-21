@@ -313,6 +313,11 @@ if DISPLAY_MODE is None:
     DISPLAY_MODE = "Normal"
 print("DISPLAY_MODE set to", DISPLAY_MODE)
 
+LED_BRIGHTNESS = supportjson.readFromJSON("LED_BRIGHTNESS")
+if LED_BRIGHTNESS is None:
+    LED_BRIGHTNESS = 100
+print("LED_BRIGHTNESS set to", LED_BRIGHTNESS)
+
 #Display Initialization
 DisplayI2C.startupDisplay()
 
@@ -340,6 +345,8 @@ except Exception as e:
 DisplayI2C.display_row7 = "Initialized"
 DisplayI2C.displayRefresh()
 
+LED.ledObject.fill((int(255 * LED_BRIGHTNESS / 100),int(255 * LED_BRIGHTNESS / 100),int(255 * LED_BRIGHTNESS / 100)))
+LED.ledObject.write()
 sleep(1)
 
 
@@ -565,7 +572,7 @@ while True:
         DisplayI2C.displayClear()
         DisplayI2C.display_row3 = "Major Error"
         DisplayI2C.displayRefresh()
-        LED.ledObject.fill((10,10,10))
+        LED.ledObject.fill((0,255,0))
         LED.ledObject.write()
     
     # If we failed to fetch METAR data, retry quickly.
@@ -573,7 +580,7 @@ while True:
     poll_interval_s = METAR_UPDATE_INTERVAL_S
 
     if metar_data is None:
-        poll_interval_s = 3
+        poll_interval_s = 7
 
     print("Next METAR fetch in", poll_interval_s, "seconds")
 

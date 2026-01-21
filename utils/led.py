@@ -7,12 +7,13 @@ import utils.jsonsupport as supportjson
 #LED Pin and Count Stored in .json Config File
 LED_PIN = None
 LED_COUNT = None
+JSONBRIGHTNESS = None
 
 #-----LED Variables-----
 ledObject = None
 
 def startupLED():
-    global ledObject, LED_PIN, LED_COUNT
+    global ledObject, LED_PIN, LED_COUNT, JSONBRIGHTNESS
 
     if LED_PIN is None or LED_COUNT is None:
         LED_PIN = supportjson.readFromJSON("LED_PIN")
@@ -23,7 +24,7 @@ def startupLED():
     startupSequenceLED()
 
 def startupSequenceLED():
-    global ledObject, LED_COUNT
+    global ledObject, LED_COUNT, JSONBRIGHTNESS
 
     if ledObject is not None and LED_COUNT is not None:
         for i in range(LED_COUNT):
@@ -45,8 +46,8 @@ def startupSequenceLED():
         if JSONBRIGHTNESS is None:
             JSONBRIGHTNESS = 100
 
-        ledObject.fill((0,0,int(255 * JSONBRIGHTNESS / 100)))
-        ledObject.write()
+        #ledObject.fill((0,0,int(255 * JSONBRIGHTNESS / 100)))
+        #ledObject.write()
         sleep(1)
         
         #ledObject.fill((0,10,10))

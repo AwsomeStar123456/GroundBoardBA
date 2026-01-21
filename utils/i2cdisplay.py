@@ -255,9 +255,59 @@ def startupDisplay():
 
     return False
 
+
+def _sanitize_oled_text(text):
+    """Convert Unicode punctuation to ASCII and drop unsupported chars.
+
+    The SSD1306 built-in 8x8 font only reliably supports basic ASCII.
+    This prevents smart quotes like ’ from rendering as garbage.
+    """
+    if text is None:
+        return ""
+    try:
+        s = str(text)
+    except Exception:
+        return ""
+
+    # Normalize common punctuation to ASCII.
+    replacements = {
+        "\u2018": "'",  # left single quote
+        "\u2019": "'",  # right single quote
+        "\u201B": "'",  # single high-reversed-9
+        "\u2032": "'",  # prime
+        "\u201C": '"',  # left double quote
+        "\u201D": '"',  # right double quote
+        "\u00AB": '"',  # «
+        "\u00BB": '"',  # »
+        "\u2013": "-",  # en dash
+        "\u2014": "-",  # em dash
+        "\u2212": "-",  # minus sign
+        "\u2026": "...",  # ellipsis
+        "\u00A0": " ",  # non-breaking space
+        "\u2009": " ",  # thin space
+        "\u200A": " ",
+    }
+
+    for k, v in replacements.items():
+        if k in s:
+            s = s.replace(k, v)
+
+    # Keep display-friendly ASCII. Replace other chars with '?'.
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if 32 <= o <= 126:
+            out.append(ch)
+        elif ch in ("\n", "\r", "\t"):
+            out.append(" ")
+        else:
+            out.append("?")
+    return "".join(out)
+
 def displayCenterText(display, text, row):
     # text: string to draw
     # y   : vertical position in pixels
+    text = _sanitize_oled_text(text)
     text_len = len(text)
     text_width = text_len * DISPLAY_CHAR_WIDTH
     x = max(0, (DISPLAY_WIDTH - text_width) // 2)

@@ -298,24 +298,82 @@ Connection: close
 
 
 def _ap_url_decode(s):
-    # Minimal application/x-www-form-urlencoded decode
+    """Decode application/x-www-form-urlencoded into a Unicode string.
+
+    Important: percent-encoded sequences represent UTF-8 bytes.
+    Decoding them byte-by-byte into Unicode codepoints causes mojibake
+    (e.g. a smart apostrophe can turn into "â").
+    """
     if s is None:
         return ""
-    s = s.replace('+', ' ')
-    out = []
+
+    # Build bytes, then decode UTF-8.
+    out = bytearray()
     i = 0
     while i < len(s):
         ch = s[i]
+        if ch == '+':
+            out.append(32)  # space
+            i += 1
+            continue
+
         if ch == '%' and i + 2 < len(s):
             try:
-                out.append(chr(int(s[i + 1 : i + 3], 16)))
+                out.append(int(s[i + 1 : i + 3], 16))
                 i += 3
                 continue
             except Exception:
+                # Fall through and treat '%' as literal
                 pass
-        out.append(ch)
+
+        # For non-ASCII chars that are not percent-encoded, preserve them.
+        try:
+            o = ord(ch)
+            if o < 128:
+                out.append(o)
+            else:
+                out.extend(ch.encode("utf-8"))
+        except Exception:
+            try:
+                out.extend(str(ch).encode("utf-8"))
+            except Exception:
+                pass
         i += 1
-    return ''.join(out)
+
+    try:
+        return bytes(out).decode("utf-8")
+    except Exception:
+        try:
+            return bytes(out).decode("latin-1")
+        except Exception:
+            return "" if s is None else str(s)
+
+
+def _maybe_fix_utf8_mojibake(s):
+    """Best-effort repair of common UTF-8 mojibake.
+
+    Example: "Semrahâs Iphone" -> "Semrah’s Iphone".
+
+    Only applied when the input looks like mojibake and the conversion succeeds.
+    """
+    if s is None:
+        return ""
+    try:
+        s = str(s)
+    except Exception:
+        return ""
+    if not s:
+        return ""
+
+    # Heuristic: common artifacts of UTF-8 bytes mis-decoded as latin-1.
+    # We keep this narrow to avoid "fixing" legitimate SSIDs.
+    if ("Ã" not in s) and ("â" not in s) and ("Â" not in s):
+        return s
+    try:
+        fixed = s.encode("latin-1").decode("utf-8")
+        return fixed if fixed else s
+    except Exception:
+        return s
 
 
 def _ap_parse_post_body(body):
@@ -384,6 +442,7 @@ def _save_wifi_config(ssid, password):
     # Blank SSID means "no SSID configured".
     if ssid is None:
         ssid = ""
+    ssid = _maybe_fix_utf8_mojibake(ssid)
     supportjson.writeToJSON("WIFI_SSID", ssid)
     # Always overwrite password on explicit "Save WiFi".
     # Blank password means open network / no password.
@@ -505,35 +564,105 @@ def _html_escape(s):
 
 
 def _scan_ssids():
-    """Scan SSIDs using STA interface (best-effort while AP is active)."""
+    """Scan SSIDs using STA interface.
+
+    Notes:
+    - The Pico W's RF "sensitivity" isn't directly software-tunable, but
+      doing multiple scan passes and disabling power-save during the scan
+      often helps discover weaker/farther APs.
+    - When AP mode is active, scans can be less reliable; multi-pass helps.
+    """
     sta = None
     try:
         sta = network.WLAN(network.STA_IF)
+
+        # Allow scan tuning via config.json (optional).
+        # Keep defaults conservative to avoid long UI stalls.
+        try:
+            scan_passes = supportjson.readFromJSON("WIFI_SCAN_PASSES")
+            scan_passes = int(scan_passes) if scan_passes is not None else 3
+        except Exception:
+            scan_passes = 3
+        if scan_passes < 1:
+            scan_passes = 1
+        if scan_passes > 8:
+            scan_passes = 8
+
+        try:
+            inter_pass_sleep_ms = supportjson.readFromJSON("WIFI_SCAN_INTERPASS_MS")
+            inter_pass_sleep_ms = int(inter_pass_sleep_ms) if inter_pass_sleep_ms is not None else 250
+        except Exception:
+            inter_pass_sleep_ms = 250
+        if inter_pass_sleep_ms < 0:
+            inter_pass_sleep_ms = 0
+        if inter_pass_sleep_ms > 2000:
+            inter_pass_sleep_ms = 2000
+
+        try:
+            warmup_ms = supportjson.readFromJSON("WIFI_SCAN_WARMUP_MS")
+            warmup_ms = int(warmup_ms) if warmup_ms is not None else 300
+        except Exception:
+            warmup_ms = 300
+        if warmup_ms < 0:
+            warmup_ms = 0
+        if warmup_ms > 3000:
+            warmup_ms = 3000
+
+        try:
+            limit = supportjson.readFromJSON("WIFI_SCAN_LIMIT")
+            limit = int(limit) if limit is not None else 30
+        except Exception:
+            limit = 30
+        if limit < 5:
+            limit = 5
+        if limit > 60:
+            limit = 60
+
         try:
             sta.active(True)
         except Exception:
             pass
-        _sleep_ms(200)
 
-        nets = sta.scan()
+        # Disable WiFi power saving during scan for better reliability.
+        try:
+            sta.config(pm=0xa11140)
+        except Exception:
+            pass
+
+        _sleep_ms(warmup_ms)
 
         seen = {}
-        for n in nets:
+        for _ in range(scan_passes):
             try:
-                ssid = _decode_ssid(n[0])
-                rssi = n[3]
-                if not ssid:
-                    continue
-                # Keep strongest RSSI if duplicates.
-                if ssid not in seen or rssi > seen[ssid]:
-                    seen[ssid] = rssi
+                gc.collect()
             except Exception:
                 pass
+
+            try:
+                nets = sta.scan()
+            except Exception as e:
+                print("SSID scan pass failed:", e)
+                nets = []
+
+            for n in nets:
+                try:
+                    ssid = _decode_ssid(n[0])
+                    rssi = n[3]
+                    if not ssid:
+                        continue
+                    # Keep strongest RSSI if duplicates.
+                    if ssid not in seen or rssi > seen[ssid]:
+                        seen[ssid] = rssi
+                except Exception:
+                    pass
+
+            if inter_pass_sleep_ms:
+                _sleep_ms(inter_pass_sleep_ms)
 
         ssids = list(seen.keys())
         ssids.sort(key=lambda s: seen.get(s, -999), reverse=True)
         # Keep page small.
-        return ssids[:20]
+        return ssids[:limit]
 
     except Exception as e:
         print("SSID scan failed:", e)
@@ -1167,9 +1296,114 @@ def get_metar_raw(station_ids=None):
 
 def _decode_ssid(raw_ssid):
     try:
-        return raw_ssid.decode() if isinstance(raw_ssid, (bytes, bytearray)) else str(raw_ssid)
+        if isinstance(raw_ssid, (bytes, bytearray)):
+            try:
+                return raw_ssid.decode("utf-8")
+            except Exception:
+                return raw_ssid.decode("latin-1")
+        return str(raw_ssid)
     except Exception:
         return str(raw_ssid)
+
+
+def _normalize_ssid_for_match(ssid):
+    """Normalize an SSID for best-effort matching.
+
+    SSIDs are technically byte strings and can contain UTF-8 (e.g. iOS smart quotes).
+    For user convenience we do a fuzzy comparison for *matching only*:
+    - repair common mojibake
+    - map smart quotes/dashes to ASCII
+    - trim whitespace
+    - casefold via lower()
+    """
+    if ssid is None:
+        return ""
+    try:
+        s = str(ssid)
+    except Exception:
+        return ""
+
+    s = _maybe_fix_utf8_mojibake(s)
+    # Smart quotes / dashes commonly seen in iOS SSIDs.
+    s = (
+        s.replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201b", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u2013", "-")
+        .replace("\u2014", "-")
+        .replace("\u2212", "-")
+        .replace("\u00a0", " ")
+    )
+    try:
+        s = s.strip()
+    except Exception:
+        pass
+    return s.lower()
+
+
+def _ssid_display_safe(ssid):
+    """Make SSID readable in logs / simple displays (ASCII-ish)."""
+    if ssid is None:
+        return ""
+    try:
+        s = str(ssid)
+    except Exception:
+        return ""
+    s = _maybe_fix_utf8_mojibake(s)
+    s = (
+        s.replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201b", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u2013", "-")
+        .replace("\u2014", "-")
+        .replace("\u2212", "-")
+        .replace("\u00a0", " ")
+    )
+    # Replace remaining non-ASCII with '?'
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if 32 <= o <= 126:
+            out.append(ch)
+        else:
+            out.append("?")
+    return "".join(out)
+
+
+def _find_ssid_in_scan(nets, target_ssid):
+    """Return (found: bool, matched_ssid: str|None).
+
+    - First tries exact match.
+    - Then tries normalized match (smart quotes/case), returning the scanned SSID.
+    """
+    if not target_ssid or not nets:
+        return False, None
+
+    # Exact match first.
+    for net in nets:
+        try:
+            ssid = _decode_ssid(net[0])
+            if ssid == target_ssid:
+                return True, ssid
+        except Exception:
+            pass
+
+    target_norm = _normalize_ssid_for_match(target_ssid)
+    if not target_norm:
+        return False, None
+
+    for net in nets:
+        try:
+            ssid = _decode_ssid(net[0])
+            if _normalize_ssid_for_match(ssid) == target_norm:
+                return True, ssid
+        except Exception:
+            pass
+    return False, None
 
 
 def _ssid_in_scan(nets, target_ssid):
@@ -1251,6 +1485,15 @@ def startupWifi():
     #Initalize Wifi Variables from JSON Config if not already set
     if( WIFI_SSID is None):
         WIFI_SSID = supportjson.readFromJSON("WIFI_SSID")
+    # Auto-repair legacy mojibake SSIDs that were saved incorrectly.
+    try:
+        if WIFI_SSID is not None:
+            fixed_ssid = _maybe_fix_utf8_mojibake(WIFI_SSID)
+            if fixed_ssid != WIFI_SSID:
+                WIFI_SSID = fixed_ssid
+                supportjson.writeToJSON("WIFI_SSID", fixed_ssid)
+    except Exception:
+        pass
     if( WIFI_PASSWORD is None):
         WIFI_PASSWORD = supportjson.readFromJSON("WIFI_PASSWORD")
     if( MAX_WIFI_WAIT is None):
@@ -1316,17 +1559,35 @@ def startupWifi():
     nets = []
     try:
         nets = wlan.scan()
-        print("Nearby networks (scan):", [_decode_ssid(n[0]) for n in nets])
+        # Print a log-friendly list; MicroPython repr may escape Unicode.
+        print("Nearby networks (scan):", [_ssid_display_safe(_decode_ssid(n[0])) for n in nets])
     except Exception as e:
         print("Network scan failed:", e)
 
-    ssid_found = _ssid_in_scan(nets, WIFI_SSID)
-    if not ssid_found:
-        print("Configured SSID not seen in scan:", WIFI_SSID)
+    ssid_found, matched_ssid = _find_ssid_in_scan(nets, WIFI_SSID)
+    connect_ssid = WIFI_SSID
+    if ssid_found and matched_ssid and matched_ssid != WIFI_SSID:
+        # We found a normalized match (likely smart quote / capitalization differences).
+        print(
+            "Configured SSID differs from scan; using scanned SSID:",
+            _ssid_display_safe(matched_ssid),
+            "(was:",
+            _ssid_display_safe(WIFI_SSID),
+            ")",
+        )
+        connect_ssid = matched_ssid
+        # Persist the exact scanned SSID so future boots match/connect reliably.
+        try:
+            supportjson.writeToJSON("WIFI_SSID", matched_ssid)
+            WIFI_SSID = matched_ssid
+        except Exception:
+            pass
+    elif not ssid_found:
+        print("Configured SSID not seen in scan:", _ssid_display_safe(WIFI_SSID))
 
     #Connect to WiFi
     try:
-        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
+        wlan.connect(connect_ssid, WIFI_PASSWORD)
     except Exception as e:
         print("wlan.connect() raised:", e)
 
