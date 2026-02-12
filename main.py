@@ -27,6 +27,44 @@ METAR_UPDATE_INTERVAL_S = None
 DISPLAY_MODE = None
 
 
+def _safe_int(value):
+    try:
+        return int(value)
+    except Exception:
+        return None
+
+
+def _safe_float(value):
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+def _parse_wind_dir(wdir):
+    """Return (wind_dir_degrees:int|None, is_variable:bool).
+
+    METAR JSON may provide wdir as an int, numeric string, or 'VRB'.
+    """
+    if wdir is None:
+        return None, True
+
+    # Sometimes wdir arrives as a string (e.g. '270', 'VRB').
+    try:
+        wdir_str = str(wdir).strip().upper()
+    except Exception:
+        return None, True
+
+    if wdir_str in ("VRB", "VAR"):
+        return None, True
+
+    wdir_int = _safe_int(wdir_str)
+    if wdir_int is None:
+        return None, True
+
+    return wdir_int % 360, False
+
+
 def _short(s, max_len=16):
     if s is None:
         return ""
@@ -112,11 +150,24 @@ def leds_set_colors(wind_dir, wind_speed):
     if RUNWAY_HEADINGS is None:
         RUNWAY_HEADINGS = supportjson.readFromJSON("RUNWAY_HEADINGS")
 
-    wind_dir = int(wind_dir)
-    wind_speed = float(wind_speed)    
+    wind_dir, wind_is_variable = _parse_wind_dir(wind_dir)
+    wind_speed = _safe_float(wind_speed)
     runway_headings = RUNWAY_HEADINGS
 
+    if wind_speed is None:
+        return
+
     if runway_headings is None:
+        return
+
+    # Variable wind (VRB) has no single direction; show a safe, meaningful pattern.
+    # If it is light/variable, treat as calm; otherwise indicate uncertainty.
+    if wind_is_variable:
+        if wind_speed <= 3:
+            LED.ledObject.fill((255 * LED_BRIGHTNESS // 100, 0, 0))
+        else:
+            LED.ledObject.fill((255 * LED_BRIGHTNESS // 100, 255 * LED_BRIGHTNESS // 100, 0))
+        LED.ledObject.write()
         return
 
     print(wind_dir, wind_speed)  # Debug: print wind data
@@ -416,6 +467,7 @@ while True:
     metar_data = None
     DisplayI2C.displayClear()
 
+    wifiStatus = {"reason": None, "status": None}
     try:
 
         if not WiFi.wlan.isconnected():
@@ -472,7 +524,12 @@ while True:
             flight_cat = metar.get('fltCat')
             obstime_time = metar.get('obsTime')
 
-            print("Wind:", wind_dir, "degrees @", wind_speed, "kt")
+            wind_dir_deg, wind_is_variable = _parse_wind_dir(wind_dir)
+
+            if wind_is_variable:
+                print("Wind: VRB @", wind_speed, "kt")
+            else:
+                print("Wind:", wind_dir_deg, "degrees @", wind_speed, "kt")
             print("Temperature:", temp, "°C")
             print("Flight Category:", flight_cat)
             print("METAR Time:", obstime_time)
@@ -492,7 +549,11 @@ while True:
             DisplayI2C.display_row7 = obsTimeFormatted
         else:
             print("Unexpected or no METAR format")
-            wifiNoConnectReason = wifiStatus["reason"]
+            wifiNoConnectReason = None
+            try:
+                wifiNoConnectReason = wifiStatus.get("reason") if isinstance(wifiStatus, dict) else None
+            except Exception:
+                wifiNoConnectReason = None
             print("WiFi No Connect Reason:", wifiNoConnectReason)
 
             DisplayI2C.display_row3 = "Failiure Reason"
@@ -544,17 +605,23 @@ while True:
 
                     
 
-            if(wind_speed == 0):
+            wind_speed_num = _safe_float(wind_speed) or 0.0
+            wind_dir_deg, wind_is_variable = _parse_wind_dir(wind_dir)
+
+            if wind_speed_num == 0:
                 DisplayI2C.displaySetBitmap("arrow", DisplayI2C.ByteCalm, 24, 24, 10, 24, layer="bg", quantize_deg=5)
                 DisplayI2C.display_row3 = "     0 @ 0 kt"
+            elif wind_is_variable or wind_dir_deg is None:
+                DisplayI2C.displaySetBitmap("arrow", DisplayI2C.ByteCalm, 24, 24, 10, 24, layer="bg", quantize_deg=5)
+                DisplayI2C.display_row3 = "     VRB @ " + str(wind_speed) + " kt"
             else:
                 # METAR wind_dir is the direction the wind is FROM.
                 # For a "wind is going" arrow, flip 180 degrees.
-                arrow_dir = (int(wind_dir) + 180) % 360
+                arrow_dir = (int(wind_dir_deg) + 180) % 360
                 DisplayI2C.displaySetBitmapRotated("arrow", DisplayI2C.Arrow, 24, 24, 10, 24, arrow_dir, layer="bg", quantize_deg=5)
-                DisplayI2C.display_row3 = "     " + str(wind_dir) + " @ " + str(wind_speed) + " kt"
+                DisplayI2C.display_row3 = "     " + str(wind_dir_deg) + " @ " + str(wind_speed) + " kt"
 
-            if(wind_speed == 0):
+            if wind_speed_num == 0:
                 DisplayI2C.display_row4 = "     Wind Calm"
             elif(wind_gust is None):
                 DisplayI2C.display_row4 = ""
