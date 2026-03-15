@@ -263,28 +263,90 @@ def metar_condition_str(metar):
 
     wx = metar.get("wxString")
     if wx:
-        wxu = str(wx).upper()
-        # Thunderstorms
-        if "TS" in wxu:
+        try:
+            wxu = str(wx).upper()
+        except Exception:
+            wxu = ""
+
+        # Parse the raw wxString as METAR tokens and only use known codes.
+        # Unknown descriptors/phenomena are ignored.
+        wx_tokens = wxu.replace("+", " ").replace("-", " ").split()
+        if not wx_tokens and wxu:
+            wx_tokens = [wxu]
+
+        has_ts = False
+        has_sn = False
+        has_pl = False
+        has_fzra = False
+        has_fzdz = False
+        has_ra = False
+        has_dz = False
+        has_fg = False
+        has_br = False
+        has_hz = False
+
+        known_codes = (
+            "TS", "SN", "PL", "FZRA", "FZDZ", "RA", "DZ", "FG", "BR", "HZ"
+        )
+
+        for token in wx_tokens:
+            if not token:
+                continue
+            # Keep only letters so odd separators don't matter.
+            letters = ""
+            for ch in token:
+                if "A" <= ch <= "Z":
+                    letters += ch
+            if not letters:
+                continue
+
+            found_known = False
+            for code in known_codes:
+                if code in letters:
+                    found_known = True
+                    if code == "TS":
+                        has_ts = True
+                    elif code == "SN":
+                        has_sn = True
+                    elif code == "PL":
+                        has_pl = True
+                    elif code == "FZRA":
+                        has_fzra = True
+                    elif code == "FZDZ":
+                        has_fzdz = True
+                    elif code == "RA":
+                        has_ra = True
+                    elif code == "DZ":
+                        has_dz = True
+                    elif code == "FG":
+                        has_fg = True
+                    elif code == "BR":
+                        has_br = True
+                    elif code == "HZ":
+                        has_hz = True
+
+            # Unknown token: ignore and continue.
+            if not found_known:
+                continue
+
+        # Keep the same priority ordering as before.
+        if has_ts:
             return "Thunder"
-        # Frozen precip first
-        if "SN" in wxu:
+        if has_sn:
             return "Snow"
-        if "PL" in wxu:
+        if has_pl:
             return "Ice Pellets"
-        if "FZRA" in wxu or "FZDZ" in wxu:
+        if has_fzra or has_fzdz:
             return "Freezing"
-        # Liquid precip
-        if "RA" in wxu:
+        if has_ra:
             return "Rain"
-        if "DZ" in wxu:
+        if has_dz:
             return "Drizzle"
-        # Obstructions
-        if "FG" in wxu:
+        if has_fg:
             return "Fog"
-        if "BR" in wxu:
+        if has_br:
             return "Mist"
-        if "HZ" in wxu:
+        if has_hz:
             return "Haze"
 
     # Cloud-only fallback
@@ -324,8 +386,9 @@ def metar_condition_str(metar):
     if cover_u == "FEW":
         return "Few"
 
-    # If we truly have no cloud info, treat as clear-ish.
-    if not cover_u:
+    # Unknown cloud cover tokens are ignored.
+    # If we have no recognized cloud info, treat as clear-ish.
+    if not cover_u or cover_u not in ("OVC", "BKN", "SCT", "FEW", "CLR", "SKC"):
         return "Clear"
 
     return "Cloudy"
