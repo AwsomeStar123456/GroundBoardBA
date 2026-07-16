@@ -123,13 +123,21 @@ def displayRefresh():
     displayObject.present()
 
 def displayClear():
+    """
+    Fully clears the display:
+    - Clears all text rows
+    - Removes all background and foreground bitmaps
+    - Clears the framebuffer and updates the physical display
+    """
     global displayObject
     global display_row0, display_row1, display_row2, display_row3
     global display_row4, display_row5, display_row6, display_row7
+    global _bitmaps_bg, _bitmaps_fg
 
     if displayObject is None:
         return
-    
+
+    # Clear all text content
     display_row0 = ""
     display_row1 = ""
     display_row2 = ""
@@ -139,6 +147,11 @@ def displayClear():
     display_row6 = ""
     display_row7 = ""
 
+    # Clear all registered bitmaps
+    _bitmaps_bg = {}
+    _bitmaps_fg = {}
+
+    # Clear the display buffer and push to screen
     displayObject.clear()
     displayObject.present()
 
