@@ -525,6 +525,9 @@ sleep(3)
 DisplayI2C.displayClear()
 #WiFi.startupWifi()
 #print(WiFi.get_metar_raw())
+
+print("Entering main loop...")
+
 while True:
 
     metar_data = None

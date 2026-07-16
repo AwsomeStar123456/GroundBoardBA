@@ -1,0 +1,365 @@
+from lib.ssd1306 import SSD1306_I2C
+from lib.ssd1309 import Display
+from machine import I2C, Pin
+
+try:
+    import framebuf
+except Exception:
+    framebuf = None
+
+try:
+    import math
+except Exception:
+    math = None
+
+#-----Display Config-----
+DISPLAY_I2C_SCL_PIN = 5
+DISPLAY_I2C_SDA_PIN = 4
+DISPLAY_CONTRAST = 255  # Max contrast
+DISPLAY_WIDTH = 128
+DISPLAY_HEIGHT = 64
+DISPLAY_CHAR_WIDTH = 8  # 8x8 font in ssd1306
+DISPLAY_ROW_HEIGHT = 8  # 10 pixels per character row
+
+#-----Display Variables-----
+displayI2C = None
+displayObject = None
+
+display_row0 = ""
+display_row1 = ""
+display_row2 = ""
+display_row3 = ""
+display_row4 = ""
+display_row5 = ""
+display_row6 = ""
+display_row7 = ""
+
+ByteSunny = bytearray([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x04, 
+	0x00, 0x20, 0x02, 0x00, 0x40, 0x00, 0x3c, 0x00, 0x00, 0x66, 0x00, 0x00, 0x81, 0x00, 0x01, 0x81, 
+	0x80, 0x19, 0x00, 0x98, 0x19, 0x00, 0x98, 0x01, 0x81, 0x80, 0x00, 0x81, 0x00, 0x00, 0x66, 0x00, 
+	0x00, 0x3c, 0x00, 0x02, 0x00, 0x40, 0x04, 0x00, 0x20, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+BytePartlyCloudy = bytearray([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x80, 0x00, 0x20, 0x84, 0x00, 0x10, 
+	0x08, 0x00, 0x09, 0xc0, 0x00, 0x06, 0x60, 0x00, 0x04, 0x1f, 0x80, 0x08, 0x30, 0xc0, 0xe8, 0x20, 
+	0x40, 0x04, 0x40, 0x3c, 0x06, 0x40, 0x06, 0x08, 0xc0, 0x03, 0x11, 0x00, 0x01, 0x22, 0x00, 0x01, 
+	0x02, 0x00, 0x01, 0x03, 0x00, 0x02, 0x01, 0x80, 0x06, 0x00, 0xff, 0xf8, 0x00, 0x00, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+ByteCloudy = bytearray([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+	0x70, 0x00, 0x01, 0xcc, 0x00, 0x01, 0x02, 0x00, 0x02, 0x03, 0x00, 0x02, 0x01, 0xf0, 0x06, 0x00, 
+	0x08, 0x1e, 0x00, 0x04, 0x30, 0x00, 0x04, 0x20, 0x00, 0x04, 0x20, 0x00, 0x04, 0x20, 0x00, 0x0c, 
+	0x10, 0x00, 0x08, 0x1f, 0xff, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+ByteThunderStorm = bytearray([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf8, 0x00, 0x01, 0x84, 0x00, 0x03, 0x02, 0x00, 0x02, 
+	0x01, 0xe0, 0x02, 0x01, 0x10, 0x0e, 0x00, 0x08, 0x18, 0x00, 0x04, 0x20, 0x00, 0x04, 0x20, 0x00, 
+	0x04, 0x20, 0x00, 0x04, 0x20, 0x0c, 0x08, 0x10, 0x1c, 0x18, 0x0f, 0x39, 0xe0, 0x00, 0x30, 0x00, 
+	0x04, 0x78, 0x00, 0x0c, 0x10, 0xc0, 0x18, 0x21, 0x80, 0x00, 0x41, 0x00, 0x00, 0x00, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+ByteSnow = bytearray([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0xcc, 0x00, 0x01, 0x02, 0x00, 0x02, 
+	0x02, 0x00, 0x02, 0x01, 0xf0, 0x02, 0x00, 0x08, 0x1e, 0x00, 0x0c, 0x30, 0x10, 0x04, 0x20, 0x10, 
+	0x04, 0x20, 0xd6, 0x04, 0x20, 0x38, 0x04, 0x30, 0xfe, 0x08, 0x1c, 0xd6, 0x70, 0x00, 0x10, 0x00, 
+	0x00, 0x10, 0x10, 0x08, 0x00, 0x18, 0x18, 0x00, 0x10, 0x08, 0x0c, 0x00, 0x00, 0x18, 0x00, 0x01, 
+	0x80, 0xe0, 0x03, 0x80, 0xc0, 0x00, 0x00, 0x00])
+
+ByteRain = bytearray([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x00, 0x00, 0xcc, 0x00, 0x01, 0x02, 0x00, 0x02, 
+	0x02, 0x00, 0x02, 0x01, 0xf0, 0x02, 0x00, 0x08, 0x1e, 0x00, 0x0c, 0x30, 0x00, 0x04, 0x20, 0x00, 
+	0x04, 0x20, 0x00, 0x04, 0x20, 0x00, 0x04, 0x30, 0x00, 0x08, 0x1f, 0xff, 0xf0, 0x00, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x02, 0x11, 0x80, 0x00, 0x01, 0x00, 0x08, 0x44, 0x00, 0x10, 0x04, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+ByteHaze = bytearray([0x00, 0x3e, 0x00, 0x00, 0xff, 0x80, 0x01, 0x80, 0xc0, 0x03, 0x00, 0x60, 0x07, 0x00, 0x30, 0x3e, 
+	0x00, 0x30, 0x60, 0x00, 0x1c, 0x40, 0x00, 0x0e, 0xc0, 0x00, 0x03, 0xc0, 0x00, 0x03, 0xc0, 0x00, 
+	0x03, 0xc0, 0x00, 0x03, 0x60, 0x00, 0x03, 0x3f, 0xff, 0xfe, 0x1f, 0xff, 0xfc, 0x00, 0x00, 0x00, 
+	0x01, 0xff, 0xf0, 0x03, 0xff, 0xf8, 0x00, 0x00, 0x00, 0x1f, 0xfe, 0x00, 0x3f, 0xff, 0x00, 0x00, 
+	0x00, 0x00, 0x03, 0xff, 0xc0, 0x07, 0xff, 0xe0])
+
+ByteCalm = bytearray([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7e, 0x00, 0x01, 0xff, 0x80, 0x07, 0x81, 0xe0, 0x0e, 
+	0x00, 0x70, 0x0c, 0x3c, 0x30, 0x18, 0xff, 0x18, 0x19, 0xc3, 0x98, 0x31, 0x81, 0x8c, 0x33, 0x00, 
+	0xcc, 0x33, 0x00, 0xcc, 0x33, 0x00, 0xcc, 0x33, 0x00, 0xcc, 0x31, 0x81, 0x8c, 0x19, 0xc3, 0x98, 
+	0x18, 0xff, 0x18, 0x0c, 0x3c, 0x30, 0x0e, 0x00, 0x70, 0x07, 0x81, 0xe0, 0x01, 0xff, 0x80, 0x00, 
+	0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+Arrow = bytearray([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 
+	0x3c, 0x00, 0x00, 0x7e, 0x00, 0x00, 0xdb, 0x00, 0x01, 0x99, 0x80, 0x03, 0x18, 0xc0, 0x00, 0x18, 
+	0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 
+	0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 
+	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+
+# Bitmap overlays (1-bit). Each entry is: key -> (framebuffer, x, y)
+_bitmaps_bg = {}
+_bitmaps_fg = {}
+
+def _iround(v):
+    # Round-to-nearest int, correctly for negative values.
+    if v >= 0:
+        return int(v + 0.5)
+    return int(v - 0.5)
+
+
+def _bitmap_buffer_size(width, height, fmt):
+    w = int(width)
+    h = int(height)
+    if framebuf is None:
+        raise RuntimeError("framebuf not available")
+
+    # MicroPython framebuf packing rules.
+    if fmt in (framebuf.MONO_HLSB, framebuf.MONO_HMSB):
+        return ((w + 7) // 8) * h
+    if fmt == framebuf.MONO_VLSB:
+        return w * ((h + 7) // 8)
+
+    raise ValueError("unsupported bitmap format")
+
+
+def _rotate_bitmap(src_buf, width, height, fmt, degrees):
+    """Rotate a 1-bit bitmap buffer by degrees (clockwise).
+
+    Uses framebuf's pixel() reads/writes to avoid bit-order mistakes.
+    Keeps the same width/height (will clip corners for non-90° rotations).
+    """
+    if framebuf is None:
+        raise RuntimeError("framebuf not available")
+    if math is None:
+        raise RuntimeError("math not available")
+
+    w = int(width)
+    h = int(height)
+    deg = float(degrees) % 360.0
+    if deg == 0.0:
+        return src_buf
+
+    expected = _bitmap_buffer_size(w, h, fmt)
+    if len(src_buf) != expected:
+        raise ValueError("bitmap length mismatch: got {}, expected {}".format(len(src_buf), expected))
+
+    # Ensure the source buffer supports the buffer protocol.
+    src_fb = framebuf.FrameBuffer(src_buf, w, h, fmt)
+    dst_buf = bytearray(expected)
+    dst_fb = framebuf.FrameBuffer(dst_buf, w, h, fmt)
+
+    theta = math.radians(deg)
+    c = math.cos(theta)
+    s = math.sin(theta)
+
+    cx = (w - 1) / 2.0
+    cy = (h - 1) / 2.0
+
+    # Inverse-map destination pixel -> source pixel.
+    # We want the *output* to be rotated clockwise by deg.
+    # So for each destination pixel, we sample the source at the inverse transform
+    # (i.e., a counter-clockwise rotation by deg).
+    for y in range(h):
+        y0 = y - cy
+        for x in range(w):
+            x0 = x - cx
+
+            # src = R(-deg) * dest
+            xs = x0 * c + y0 * s + cx
+            ys = -x0 * s + y0 * c + cy
+
+            xi = _iround(xs)
+            yi = _iround(ys)
+            if 0 <= xi < w and 0 <= yi < h:
+                if src_fb.pixel(xi, yi):
+                    dst_fb.pixel(x, y, 1)
+
+    return dst_buf
+
+
+def displaySetBitmap(
+    key,
+    bitmap_bytes,
+    width,
+    height,
+    x,
+    y,
+    layer="bg",
+    fmt=None,
+    rotate_deg=None,
+    quantize_deg=None,
+):
+    """Register a 1-bit bitmap to be blitted during displayRefresh().
+
+    - key: any hashable (string recommended)
+    - bitmap_bytes: bytes/bytearray containing packed bitmap data
+    - width/height: bitmap dimensions in pixels
+    - x/y: destination position in pixels
+    - layer: 'bg' (draw before text) or 'fg' (draw after text)
+    - fmt: framebuf format; defaults to framebuf.MONO_HLSB
+    - rotate_deg: optional clockwise rotation (0..360)
+    - quantize_deg: optional step (e.g. 5 or 10) to reduce rotate work
+    """
+    global _bitmaps_bg, _bitmaps_fg
+    if framebuf is None:
+        raise RuntimeError("framebuf not available")
+    if fmt is None:
+        fmt = framebuf.MONO_HLSB
+
+    if rotate_deg is not None:
+        deg = float(rotate_deg)
+        if quantize_deg:
+            step = float(quantize_deg)
+            if step > 0:
+                deg = round(deg / step) * step
+        bitmap_bytes = _rotate_bitmap(bitmap_bytes, width, height, fmt, deg)
+
+    fb = framebuf.FrameBuffer(bitmap_bytes, width, height, fmt)
+
+    layer = (layer or "bg").lower()
+    if layer == "fg":
+        _bitmaps_fg[key] = (fb, int(x), int(y))
+    else:
+        _bitmaps_bg[key] = (fb, int(x), int(y))
+
+
+def displaySetBitmapRotated(key, bitmap_bytes, width, height, x, y, degrees, layer="bg", quantize_deg=5):
+    """Convenience wrapper for rotated bitmaps (clockwise)."""
+    if framebuf is None:
+        raise RuntimeError("framebuf not available")
+    return displaySetBitmap(
+        key,
+        bitmap_bytes,
+        width,
+        height,
+        x,
+        y,
+        layer=layer,
+        fmt=framebuf.MONO_HLSB,
+        rotate_deg=degrees,
+        quantize_deg=quantize_deg,
+    )
+
+
+def displayRemoveBitmap(key):
+    global _bitmaps_bg, _bitmaps_fg
+    _bitmaps_bg.pop(key, None)
+    _bitmaps_fg.pop(key, None)
+
+
+def displayClearBitmaps():
+    global _bitmaps_bg, _bitmaps_fg
+    _bitmaps_bg = {}
+    _bitmaps_fg = {}
+
+def startupDisplay():
+    global displayI2C, displayObject
+    
+    displayI2C = I2C(0, scl=Pin(5), sda=Pin(4), freq=400000)
+    displayObject = Display(i2c=displayI2C, rst=None, width=128, height=64)
+    #displayObject.contrast(DISPLAY_CONTRAST)
+
+    if displayI2C is not None and displayObject is not None:
+        return True
+
+    return False
+
+
+def _sanitize_oled_text(text):
+    """Convert Unicode punctuation to ASCII and drop unsupported chars.
+
+    The SSD1306 built-in 8x8 font only reliably supports basic ASCII.
+    This prevents smart quotes like ’ from rendering as garbage.
+    """
+    if text is None:
+        return ""
+    try:
+        s = str(text)
+    except Exception:
+        return ""
+
+    # Normalize common punctuation to ASCII.
+    replacements = {
+        "\u2018": "'",  # left single quote
+        "\u2019": "'",  # right single quote
+        "\u201B": "'",  # single high-reversed-9
+        "\u2032": "'",  # prime
+        "\u201C": '"',  # left double quote
+        "\u201D": '"',  # right double quote
+        "\u00AB": '"',  # «
+        "\u00BB": '"',  # »
+        "\u2013": "-",  # en dash
+        "\u2014": "-",  # em dash
+        "\u2212": "-",  # minus sign
+        "\u2026": "...",  # ellipsis
+        "\u00A0": " ",  # non-breaking space
+        "\u2009": " ",  # thin space
+        "\u200A": " ",
+    }
+
+    for k, v in replacements.items():
+        if k in s:
+            s = s.replace(k, v)
+
+    # Keep display-friendly ASCII. Replace other chars with '?'.
+    out = []
+    for ch in s:
+        o = ord(ch)
+        if 32 <= o <= 126:
+            out.append(ch)
+        elif ch in ("\n", "\r", "\t"):
+            out.append(" ")
+        else:
+            out.append("?")
+    return "".join(out)
+
+def displayCenterText(display, text, row):
+    # text: string to draw
+    # y   : vertical position in pixels
+    text = _sanitize_oled_text(text)
+    text_len = len(text)
+    text_width = text_len * DISPLAY_CHAR_WIDTH
+    x = max(0, (DISPLAY_WIDTH - text_width) // 2)
+    # SSD1309 exposes the framebuffer as monoFB rather than a top-level text() helper.
+    display.monoFB.text(text, x, row*DISPLAY_ROW_HEIGHT)
+
+def displayRefresh():
+    global displayObject, display_row0, display_row1, display_row2, display_row3, display_row4, display_row5, display_row6, display_row7
+    global _bitmaps_bg, _bitmaps_fg
+    
+    if displayObject is not None:
+        displayObject.clear()
+
+        # Draw background bitmaps first.
+        try:
+            for _key, (fb, x, y) in _bitmaps_bg.items():
+                displayObject.monoFB.blit(fb, x, y)
+        except Exception:
+            pass
+
+        displayCenterText(displayObject, display_row0, 0)
+        displayCenterText(displayObject, display_row1, 1)
+        displayCenterText(displayObject, display_row2, 2)
+        displayCenterText(displayObject, display_row3, 3)
+        displayCenterText(displayObject, display_row4, 4)
+        displayCenterText(displayObject, display_row5, 5)
+        displayCenterText(displayObject, display_row6, 6)
+        displayCenterText(displayObject, display_row7, 7)
+
+        # Draw foreground bitmaps after text.
+        try:
+            for _key, (fb, x, y) in _bitmaps_fg.items():
+                displayObject.monoFB.blit(fb, x, y)
+        except Exception:
+            pass
+
+        displayObject.present()
+
+def displayClear(clear_bitmaps=True):
+    global display_row0, display_row1, display_row2, display_row3, display_row4, display_row5, display_row6, display_row7
+    
+    display_row0 = ""
+    display_row1 = ""
+    display_row2 = ""
+    display_row3 = ""
+    display_row4 = ""
+    display_row5 = ""
+    display_row6 = ""
+    display_row7 = ""
+
+    if clear_bitmaps:
+        displayClearBitmaps()
+
+    displayRefresh()
