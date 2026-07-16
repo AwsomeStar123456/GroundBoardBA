@@ -6,7 +6,7 @@
   "lib/__init__.py",
   "lib/ssd1306.py",
   "lib/ssd1309.py",
-  "xglcd_font.py",
+  "lib/xglcd_font.py",
   "utils/__init__.py",
   "utils/buttons.py",
   "utils/i2cdisplay.py",
